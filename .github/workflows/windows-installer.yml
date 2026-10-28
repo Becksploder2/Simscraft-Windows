@@ -32,9 +32,13 @@ jobs:
           if-no-files-found: error
 
       - name: Publish versioned Windows release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" "windows/output/Simcraft-Studio-Setup.exe" --title "Simcraft Studio $env:GITHUB_REF_NAME (Windows)" --notes "Windows installer update. Existing updater requires signing-key configuration and a compatible signed update package." --verify-tag
+          if gh release view v1.0.1 >/dev/null 2>&1; then
+            echo "Release v1.0.1 already exists; leaving it unchanged."
+          else
+            gh release create v1.0.1 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.1 (Windows)" --notes "Version 1.0.1: synchronized workspace and update infrastructure. Automatic signed installation remains disabled pending signing configuration."
+          fi
