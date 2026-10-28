@@ -1,0 +1,22 @@
+name: Build TeamCraft Windows Installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install
+      - name: Build Windows setup EXE
+        run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TeamCraft-Test-Beta-Windows-Installer
+          path: dist/*.exe
+          if-no-files-found: error
