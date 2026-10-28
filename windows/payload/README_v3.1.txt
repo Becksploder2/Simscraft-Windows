@@ -1,0 +1,1 @@
+SimMorph Studio v3.1 CAS Workspace\n\nLarge CAS screenshot preview, smaller reference photo, original CAS room background.\nCapture is a screenshot, not a live in-game editor. MediaPipe inference and automatic sculpting are not yet implemented.\nExtract all files before launching.\n

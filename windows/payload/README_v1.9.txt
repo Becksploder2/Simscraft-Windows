@@ -1,0 +1,1 @@
+v1.9: Removed pasted-path UI and subprocess picker. Browse now uses a single native in-process Windows common dialog. Supports .jpg, .jpeg, .png. CAS bridge and 38 templates retained. Windows runtime not tested.

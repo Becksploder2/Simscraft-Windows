@@ -1,0 +1,1 @@
+Blue/Vegas gold icon included and shown in the running app window. Windows Explorer EXE resource icon is not yet embedded. To use icon on desktop, create shortcut and select Simcraft-Icon.ico in shortcut Properties > Change Icon.

@@ -1,0 +1,1 @@
+v4.8: Face Texture Lab (offline HTML workspace). Generates PNG artwork draft and settings JSON only. NOT UV-aligned, NOT a Sims 4 .package, no OpenAI API integration yet. Run the Windows EXE, then Face Texture Lab v4.8 menu.

@@ -1,0 +1,1 @@
+SimMorph Studio v4.0: Face Templates menu or buttons open an in-app thumbnail gallery. Click a thumbnail to select its ID. 19 female and 19 male template previews are included. Choosing a template does NOT alter the current Sims 4 character. MediaPipe and automatic morphing are not yet functional.

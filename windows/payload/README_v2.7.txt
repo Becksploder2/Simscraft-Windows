@@ -1,0 +1,1 @@
+SimMorph Studio v2.7: integrated Analyze Faces GUI action and MediaPipe worker. Requires separate MediaPipe runtime and trained model; not a complete standalone build. No automatic facial morphing. No native model bundled. Photo picker preserved.

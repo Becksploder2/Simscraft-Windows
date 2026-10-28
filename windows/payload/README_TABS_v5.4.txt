@@ -1,0 +1,1 @@
+Simcraft v5.4: Native Windows menus consolidated to File. Click Open Simcraft Tabs to use the tabbed Studio.html workspace. Standalone native face preview remains available. UV Face Alignment added as a tab. Windows executable compiled for amd64. Tabs launch in the default browser; not embedded in the native window. Automatic CAS application is not implemented.
