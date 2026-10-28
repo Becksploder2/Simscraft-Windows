@@ -27,7 +27,7 @@ import (
 const version="5.8.0"
 var manifestURL="" // Optional direct HTTPS signed manifest override
 var githubOwner="Becksploder2" // Set at build time with -ldflags
-var githubRepo="Simcraft" // Set at build time with -ldflags
+var githubRepo="Simscraft-Windows" // Set at build time with -ldflags
 var publicKey="" // Base64 Ed25519 PUBLIC key; set by publisher at build time
 type Artifact struct { URL string `json:"url"`; SHA256 string `json:"sha256"`; Size int64 `json:"size"` }
 type Manifest struct { App string `json:"app"`; Version string `json:"version"`; Notes string `json:"notes"`; Windows Artifact `json:"windows"`; Mac Artifact `json:"mac"` }
