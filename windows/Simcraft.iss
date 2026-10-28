@@ -1,5 +1,5 @@
 #define MyAppName "Simcraft Studio"
-#define MyAppVersion "1.0.0-rc"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Wolfpack Studios"
 #define MyAppExeName "SimcraftStudio.exe"
 
