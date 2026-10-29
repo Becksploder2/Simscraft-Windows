@@ -110,13 +110,13 @@ sealed class StudioWindow : Form {
         check.Click+=async (_,_)=>await CheckForUpdates(updateStatus);
         p.Controls.Add(check);p.Controls.Add(updateStatus);
     }
-    const string CurrentVersion = "1.0.6";
+    const string CurrentVersion = "1.0.8";
     static readonly HttpClient UpdateClient = new() { Timeout=TimeSpan.FromSeconds(15) };
     async System.Threading.Tasks.Task CheckForUpdates(Label status) {
         status.Text="Checking GitHub releases...";
         try {
             using var request=new HttpRequestMessage(HttpMethod.Get,"https://api.github.com/repos/Becksploder2/Simscraft-Windows/releases/latest");
-            request.Headers.UserAgent.ParseAdd("SimcraftStudio/1.0.6");
+            request.Headers.UserAgent.ParseAdd("SimcraftStudio/1.0.8");
             using var response=await UpdateClient.SendAsync(request);response.EnsureSuccessStatusCode();
             using var json=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var tag=json.RootElement.GetProperty("tag_name").GetString()??"";
