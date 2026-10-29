@@ -16,21 +16,16 @@ sealed class StudioWindow : Form {
     readonly ComboBox kind = new() { Width = 450, DropDownStyle = ComboBoxStyle.DropDownList };
     readonly TextBox description = new() { Width = 650, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical };
     readonly CheckBox compatibility = new() { Text = "Include compatibility checks", Checked = true, AutoSize = true };
+    private Image? roomBackground;
     public StudioWindow() {
         Text = "Simcraft Studio — Native Desktop Preview"; Width = 1100; Height = 760;
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
+        try { var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png"); if(File.Exists(path)) { using var file=Image.FromFile(path); roomBackground=new Bitmap(file); } } catch(Exception) { roomBackground=null; }
         foreach(var title in new[]{"Character Studio","Hair & Glasses","Clothing SmartAssist","CC Library","Face Texture Studio","Glasses Creator","CAS Mod Studio","AI Mod Studio","UV Face Alignment","Buildcraft","Settings"}) {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
-            var backdropPath=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
-            if(File.Exists(backdropPath)) {
-                try {
-                    using var source=Image.FromFile(backdropPath);
-                    page.BackgroundImage=new Bitmap(source);
-                    page.BackgroundImageLayout=ImageLayout.Stretch;
-                } catch(Exception) { page.BackgroundImage=null; }
-            }
+            if(roomBackground != null) { page.BackgroundImage=roomBackground; page.BackgroundImageLayout=ImageLayout.Zoom; }
             tabs.TabPages.Add(page);
             if(title == "AI Mod Studio") BuildModTab(page);
             else if(title == "Character Studio") BuildCharacterTab(page);
@@ -47,7 +42,7 @@ sealed class StudioWindow : Form {
 
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
-    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64) }; page.Controls.Add(p); return p; }
+    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.Transparent }; page.Controls.Add(p); return p; }
     static void Caption(FlowLayoutPanel p,string value) => p.Controls.Add(new Label { Text=value, AutoSize=true, ForeColor=Color.White, Margin=new Padding(4,12,4,5) });
     void BuildCharacterTab(TabPage page) {
         var p=Panel(page); Caption(p,"Character Studio — reference photo and templates");
@@ -58,7 +53,25 @@ sealed class StudioWindow : Form {
         void Fill() { template.Items.Clear(); for(int i=1;i<=19;i++) template.Items.Add((gender.SelectedIndex==0?"F":"M")+i); template.SelectedIndex=0; }
         gender.SelectedIndexChanged+=(_,_)=>Fill(); Fill();
         var choose=new Button { Text="Import reference photo", AutoSize=true };
-        choose.Click+=(_,_)=>{ using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.bmp" }; if(dialog.ShowDialog()!=DialogResult.OK)return; try { var old=preview.Image; using var img=Image.FromFile(dialog.FileName); preview.Image=new Bitmap(img); old?.Dispose(); } catch(Exception ex) { MessageBox.Show(ex.Message); } };
+        choose.Click+=async (_,_)=>{
+            string file;
+            try { using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.bmp",CheckFileExists=true }; if(dialog.ShowDialog(this)!=DialogResult.OK)return; file=dialog.FileName; }
+            catch(Exception ex){MessageBox.Show(this,"Cannot open file picker: "+ex.Message);return;}
+            choose.Enabled=false;
+            try {
+                var loaded=await System.Threading.Tasks.Task.Run(()=>{
+                    var info=new FileInfo(file);
+                    if(info.Length>40_000_000)throw new InvalidDataException("Image exceeds 40 MB limit.");
+                    using var image=Image.FromFile(file);
+                    if(image.Width>8192||image.Height>8192||((long)image.Width*image.Height)>30_000_000)
+                        throw new InvalidDataException("Image dimensions too large. Resize the photo first.");
+                    return new Bitmap(image);
+                });
+                if(preview.IsDisposed){loaded.Dispose();return;}
+                var previous=preview.Image;preview.Image=loaded;previous?.Dispose();
+            } catch(Exception ex){MessageBox.Show(this,"Photo import failed: "+ex.Message);}
+            finally {if(!choose.IsDisposed)choose.Enabled=true;}
+        };
         p.Controls.Add(choose);p.Controls.Add(preview);Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
