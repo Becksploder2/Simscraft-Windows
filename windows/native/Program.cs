@@ -151,6 +151,7 @@ sealed class StudioWindow : Form {
             finally {if(!analyze.IsDisposed)analyze.Enabled=true;}
         };
         p.Controls.Add(analyze);p.Controls.Add(faceStatus);
+        importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
@@ -158,6 +159,19 @@ sealed class StudioWindow : Form {
         var capture=new Button { Text="Capture Sims 4 window",AutoSize=true };
         capture.Click+=(_,_)=>{try{var process=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));if(process==null||process.MainWindowHandle==IntPtr.Zero){casStatus.Text="No visible Sims 4 window found.";return;}if(!GetWindowRect(process.MainWindowHandle,out var rect))throw new Exception("Cannot read game window.");int width=rect.Right-rect.Left,height=rect.Bottom-rect.Top;if(width<100||height<100||width>10000||height>10000)throw new Exception("Invalid window dimensions.");using var image=new Bitmap(width,height);using(var graphics=Graphics.FromImage(image)){graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(width,height));}using var dialog=new SaveFileDialog{Filter="PNG image|*.png",FileName="Simcraft-CAS-Capture.png"};if(dialog.ShowDialog()==DialogResult.OK){image.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png);casStatus.Text="Captured game window to "+dialog.FileName+". CAS mode is not automatically verified.";}process.Dispose();}catch(Exception ex){casStatus.Text="Capture failed: "+ex.Message;}};
         p.Controls.Add(detect);p.Controls.Add(capture);p.Controls.Add(casStatus);
+        var casMonitor=new System.Windows.Forms.Timer { Interval=2500 };
+        casMonitor.Tick+=(_,_)=>{
+            try {
+                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+                if(game==null){casStatus.Text="The Sims 4 is not running.";return;}
+                var title=game.MainWindowTitle??"";
+                casStatus.Text=title.Contains("Create a Sim",StringComparison.OrdinalIgnoreCase) || title.Contains("CAS",StringComparison.OrdinalIgnoreCase)
+                    ? "Possible CAS mode detected from window title (not verified)."
+                    : "The Sims 4 is running. CAS mode cannot be verified from the process alone.";
+            }catch(Exception ex){casStatus.Text="Game monitoring unavailable: "+ex.Message;}
+        };
+        casMonitor.Start();
+        page.Disposed+=(_,_)=>casMonitor.Dispose();
         var backgroundPreview=new PictureBox { Size=new Size(440,220),SizeMode=PictureBoxSizeMode.Zoom,BorderStyle=BorderStyle.FixedSingle };
         var backgroundButton=new Button { Text="Choose CAS workspace background",AutoSize=true };
         backgroundButton.Click+=(_,_)=>{using var dialog=new OpenFileDialog{Filter="Images|*.png;*.jpg;*.jpeg;*.bmp"};if(dialog.ShowDialog()!=DialogResult.OK)return;try{using var img=Image.FromFile(dialog.FileName);var old=backgroundPreview.Image;backgroundPreview.Image=new Bitmap(img);old?.Dispose();}catch(Exception ex){MessageBox.Show(ex.Message);}};
