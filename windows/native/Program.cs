@@ -22,11 +22,66 @@ sealed class StudioWindow : Form {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
             tabs.TabPages.Add(page);
             if(title == "AI Mod Studio") BuildModTab(page);
+            else if(title == "Character Studio") BuildCharacterTab(page);
+            else if(title == "Hair & Glasses") BuildPreferencesTab(page);
+            else if(title == "Clothing SmartAssist") BuildClothingTab(page);
+            else if(title == "CC Library") BuildCatalogTab(page);
+            else if(title == "Settings") BuildSettingsTab(page);
             else {
                 var info = new Label { Text = title + "\n\nNative migration in progress. The previous HTML tool has not yet been ported.", AutoSize = true, Location = new Point(30, 35), ForeColor = Color.White };
                 page.Controls.Add(info);
             }
         }
+    }
+
+    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22) }; page.Controls.Add(p); return p; }
+    static void Caption(FlowLayoutPanel p,string value) => p.Controls.Add(new Label { Text=value, AutoSize=true, ForeColor=Color.White, Margin=new Padding(4,12,4,5) });
+    void BuildCharacterTab(TabPage page) {
+        var p=Panel(page); Caption(p,"Character Studio — reference photo and templates");
+        var preview=new PictureBox { Size=new Size(420,330), SizeMode=PictureBoxSizeMode.Zoom, BorderStyle=BorderStyle.FixedSingle };
+        var gender=new ComboBox { Width=240, DropDownStyle=ComboBoxStyle.DropDownList };
+        gender.Items.AddRange(new object[]{"Female","Male"}); gender.SelectedIndex=0;
+        var template=new ComboBox { Width=240, DropDownStyle=ComboBoxStyle.DropDownList };
+        void Fill() { template.Items.Clear(); for(int i=1;i<=19;i++) template.Items.Add((gender.SelectedIndex==0?"F":"M")+i); template.SelectedIndex=0; }
+        gender.SelectedIndexChanged+=(_,_)=>Fill(); Fill();
+        var choose=new Button { Text="Import reference photo", AutoSize=true };
+        choose.Click+=(_,_)=>{ using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.bmp" }; if(dialog.ShowDialog()!=DialogResult.OK)return; try { var old=preview.Image; using var img=Image.FromFile(dialog.FileName); preview.Image=new Bitmap(img); old?.Dispose(); } catch(Exception ex) { MessageBox.Show(ex.Message); } };
+        p.Controls.Add(choose);p.Controls.Add(preview);Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
+        Caption(p,"Native photo preview works. Automatic morphing and CAS control require engine migration.");
+    }
+    void BuildPreferencesTab(TabPage page) {
+        var p=Panel(page);Caption(p,"Hair & Glasses");
+        var glasses=new ComboBox { Width=300,DropDownStyle=ComboBoxStyle.DropDownList };
+        glasses.Items.AddRange(new object[]{"Yes","Sometimes","No"});glasses.SelectedIndex=0;
+        var hair=new ComboBox { Width=300,DropDownStyle=ComboBoxStyle.DropDownList };
+        hair.Items.AddRange(new object[]{"Match reference","Suggest flattering styles","Manual choice"});hair.SelectedIndex=0;
+        Caption(p,"Does your Sim wear glasses?");p.Controls.Add(glasses);Caption(p,"Hair approach");p.Controls.Add(hair);
+        Caption(p,"Preferences are editable; item recommendations require a loaded CAS catalog.");
+    }
+    void BuildClothingTab(TabPage page) {
+        var p=Panel(page);Caption(p,"Clothing SmartAssist — outfit planning");
+        var styles=new CheckedListBox { Width=350,Height=250,CheckOnClick=true };
+        styles.Items.AddRange(new object[]{"Sporty","Basics","Outdoorsy","Polished","Preppy","Rocker","Country","Hipster","Boho","Streetwear","Gamer","Gala","Africana"});p.Controls.Add(styles);
+        var occasion=new ComboBox { Width=280,DropDownStyle=ComboBoxStyle.DropDownList };
+        occasion.Items.AddRange(new object[]{"Everyday","Formal","Athletic","Sleep","Party","Swimwear","Hot Weather","Cold Weather"});occasion.SelectedIndex=0;p.Controls.Add(occasion);
+        var export=new Button { Text="Export outfit plan", AutoSize=true };
+        export.Click+=(_,_)=>{using var dialog=new SaveFileDialog { Filter="JSON|*.json",FileName="simcraft-outfit.json" };if(dialog.ShowDialog()!=DialogResult.OK)return;File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(new { occasion=occasion.Text,styles=styles.CheckedItems.Cast<object>().Select(x=>x.ToString()).ToArray() },new JsonSerializerOptions { WriteIndented=true }));};
+        p.Controls.Add(export);
+    }
+    void BuildCatalogTab(TabPage page) {
+        var p=Panel(page);Caption(p,"CC Library — import and inspect JSON/CSV catalog");
+        var status=new Label { Text="No catalog imported",AutoSize=true,ForeColor=Color.White };
+        var results=new TextBox { Width=650,Height=340,Multiline=true,ScrollBars=ScrollBars.Both,ReadOnly=true };
+        var button=new Button { Text="Import catalog",AutoSize=true };
+        button.Click+=(_,_)=>{using var dialog=new OpenFileDialog { Filter="Catalog|*.json;*.csv" };if(dialog.ShowDialog()!=DialogResult.OK)return;try{var content=File.ReadAllText(dialog.FileName);if(Path.GetExtension(dialog.FileName).Equals(".json",StringComparison.OrdinalIgnoreCase)){using var parsed=JsonDocument.Parse(content);status.Text="JSON catalog loaded";}else status.Text="CSV catalog loaded";results.Text=content.Length>16000?content[..16000]:content;}catch(Exception ex){MessageBox.Show(ex.Message);}};
+        p.Controls.Add(button);p.Controls.Add(status);p.Controls.Add(results);
+        Caption(p,"Read-only import; Sims 4 package resource parsing is not implemented.");
+    }
+    void BuildSettingsTab(TabPage page) {
+        var p=Panel(page);Caption(p,"Simcraft Studio — native preview");
+        Caption(p,"Export and import of mod and outfit plans are available in their respective tabs.");
+        Caption(p,"Photo previews and manual F1–F19 / M1–M19 selection are available in Character Studio.");
+        Caption(p,"The original HTML workspace is not used by this native interface.");
     }
     void BuildModTab(TabPage page) {
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(22) };
