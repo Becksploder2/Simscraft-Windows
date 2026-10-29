@@ -1,51 +1,33 @@
-name: Build Windows Simcraft Installer
+name: Build Simcraft Portable Windows
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
     paths:
-      - 'windows/**'
+      - 'windows/payload/**'
       - '.github/workflows/windows-installer.yml'
 jobs:
-  installer:
+  portable:
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Package restored legacy app without installer
+        shell: pwsh
+        run: |
+          if (!(Test-Path windows/payload/SimcraftStudio.exe)) { throw "Legacy executable missing" }
+          Compress-Archive -Path windows/payload/* -DestinationPath Simcraft-Studio-Windows-Portable.zip
+      - uses: actions/upload-artifact@v4
         with:
-          dotnet-version: '8.0.x'
-      - name: Build native desktop executable
-        shell: pwsh
-        run: dotnet publish windows/native/SimcraftNative.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o windows/native/publish
-      - name: Replace legacy executable in installer payload
-        shell: pwsh
-        run: Copy-Item windows/native/publish/SimcraftNative.exe windows/payload/SimcraftStudio.exe -Force
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --yes --no-progress
-      - name: Compile installer
-        shell: pwsh
-        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "windows\Simcraft.iss"'
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: Simcraft-Studio-Windows-Installer
-          path: windows/output/Simcraft-Studio-Setup.exe
+          name: Simcraft-Studio-Windows-Portable
+          path: Simcraft-Studio-Windows-Portable.zip
           if-no-files-found: error
-
-      - name: Publish versioned Windows release
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        shell: bash
+      - name: Publish rollback release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          if gh release view v1.0.6 >/dev/null 2>&1; then
-            echo "Release v1.0.6 already exists; leaving it unchanged."
-          else
-            gh release create v1.0.6 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.6 Native Preview (Windows)" --notes "Version 1.0.2: AI Mod Studio tab and desktop workspace. Automatic signed installation remains disabled pending signing configuration."
+          if ! gh release view v1.0.7 >/dev/null 2>&1; then
+            gh release create v1.0.7 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.7 Windows Portable Rollback" --notes "Restores the pre-native executable and assets. No installer. Native tab migration will be handled separately."
           fi
