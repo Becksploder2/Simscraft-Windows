@@ -2,6 +2,8 @@ name: Build Windows Simcraft Installer
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
     paths:
@@ -37,8 +39,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.0.1 >/dev/null 2>&1; then
-            echo "Release v1.0.1 already exists; leaving it unchanged."
+          if gh release view v1.0.2 >/dev/null 2>&1; then
+            echo "Release v1.0.2 already exists; leaving it unchanged."
           else
-            gh release create v1.0.1 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.1 (Windows)" --notes "Version 1.0.1: synchronized workspace and update infrastructure. Automatic signed installation remains disabled pending signing configuration."
+            gh release create v1.0.2 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.1 (Windows)" --notes "Version 1.0.2: AI Mod Studio tab and desktop workspace. Automatic signed installation remains disabled pending signing configuration."
           fi
