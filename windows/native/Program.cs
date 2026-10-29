@@ -25,9 +25,11 @@ sealed class StudioWindow : Form {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
             var backdropPath=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
             if(File.Exists(backdropPath)) {
-                using var source=Image.FromFile(backdropPath);
-                page.BackgroundImage=new Bitmap(source);
-                page.BackgroundImageLayout=ImageLayout.Stretch;
+                try {
+                    using var source=Image.FromFile(backdropPath);
+                    page.BackgroundImage=new Bitmap(source);
+                    page.BackgroundImageLayout=ImageLayout.Stretch;
+                } catch(Exception) { page.BackgroundImage=null; }
             }
             tabs.TabPages.Add(page);
             if(title == "AI Mod Studio") BuildModTab(page);
@@ -60,7 +62,7 @@ sealed class StudioWindow : Form {
         p.Controls.Add(choose);p.Controls.Add(preview);Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
-        detect.Click+=(_,_)=>{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();};
+        detect.Click+=(_,_)=>{try{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();}catch(Exception ex){casStatus.Text="Detection unavailable: "+ex.Message;}};
         var capture=new Button { Text="Capture Sims 4 window",AutoSize=true };
         capture.Click+=(_,_)=>{try{var process=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));if(process==null||process.MainWindowHandle==IntPtr.Zero){casStatus.Text="No visible Sims 4 window found.";return;}if(!GetWindowRect(process.MainWindowHandle,out var rect))throw new Exception("Cannot read game window.");int width=rect.Right-rect.Left,height=rect.Bottom-rect.Top;if(width<100||height<100||width>10000||height>10000)throw new Exception("Invalid window dimensions.");using var image=new Bitmap(width,height);using(var graphics=Graphics.FromImage(image)){graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(width,height));}using var dialog=new SaveFileDialog{Filter="PNG image|*.png",FileName="Simcraft-CAS-Capture.png"};if(dialog.ShowDialog()==DialogResult.OK){image.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png);casStatus.Text="Captured game window to "+dialog.FileName+". CAS mode is not automatically verified.";}process.Dispose();}catch(Exception ex){casStatus.Text="Capture failed: "+ex.Message;}};
         p.Controls.Add(detect);p.Controls.Add(capture);p.Controls.Add(casStatus);
@@ -86,7 +88,7 @@ sealed class StudioWindow : Form {
         var occasion=new ComboBox { Width=280,DropDownStyle=ComboBoxStyle.DropDownList };
         occasion.Items.AddRange(new object[]{"Everyday","Formal","Athletic","Sleep","Party","Swimwear","Hot Weather","Cold Weather"});occasion.SelectedIndex=0;p.Controls.Add(occasion);
         var export=new Button { Text="Export outfit plan", AutoSize=true };
-        export.Click+=(_,_)=>{using var dialog=new SaveFileDialog { Filter="JSON|*.json",FileName="simcraft-outfit.json" };if(dialog.ShowDialog()!=DialogResult.OK)return;File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(new { occasion=occasion.Text,styles=styles.CheckedItems.Cast<object>().Select(x=>x.ToString()).ToArray() },new JsonSerializerOptions { WriteIndented=true }));};
+        export.Click+=(_,_)=>{try{using var dialog=new SaveFileDialog { Filter="JSON|*.json",FileName="simcraft-outfit.json" };if(dialog.ShowDialog()!=DialogResult.OK)return;File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(new { occasion=occasion.Text,styles=styles.CheckedItems.Cast<object>().Select(x=>x.ToString()).ToArray() },new JsonSerializerOptions { WriteIndented=true }));}catch(Exception ex){MessageBox.Show("Export failed: "+ex.Message);}};
         p.Controls.Add(export);
     }
     void BuildCatalogTab(TabPage page) {
@@ -138,8 +140,8 @@ sealed class StudioWindow : Form {
             using var dialog = new SaveFileDialog { Filter = "Simcraft project (*.simcraft.json)|*.simcraft.json", FileName = "mod.simcraft.json" };
             if(dialog.ShowDialog()!=DialogResult.OK)return;
             var data = new { format="simcraft-mod-project", schemaVersion=1, name=name.Text, category=kind.Text, description=description.Text, compatibilityChecks=compatibility.Checked, output="specification-only" };
-            File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(data,new JsonSerializerOptions{WriteIndented=true}));
-            MessageBox.Show("Project saved. This is not an installable mod.");
+            try { File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(data,new JsonSerializerOptions{WriteIndented=true})); MessageBox.Show("Project saved. This is not an installable mod."); }
+            catch(Exception ex){MessageBox.Show("Export failed: "+ex.Message);}
         };
         panel.Controls.Add(export);
     }
