@@ -23,6 +23,12 @@ sealed class StudioWindow : Form {
         Controls.Add(tabs);
         foreach(var title in new[]{"Character Studio","Hair & Glasses","Clothing SmartAssist","CC Library","Face Texture Studio","Glasses Creator","CAS Mod Studio","AI Mod Studio","UV Face Alignment","Buildcraft","Settings"}) {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
+            var backdropPath=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
+            if(File.Exists(backdropPath)) {
+                using var source=Image.FromFile(backdropPath);
+                page.BackgroundImage=new Bitmap(source);
+                page.BackgroundImageLayout=ImageLayout.Stretch;
+            }
             tabs.TabPages.Add(page);
             if(title == "AI Mod Studio") BuildModTab(page);
             else if(title == "Character Studio") BuildCharacterTab(page);
@@ -39,7 +45,7 @@ sealed class StudioWindow : Form {
 
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
-    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22) }; page.Controls.Add(p); return p; }
+    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64) }; page.Controls.Add(p); return p; }
     static void Caption(FlowLayoutPanel p,string value) => p.Controls.Add(new Label { Text=value, AutoSize=true, ForeColor=Color.White, Margin=new Padding(4,12,4,5) });
     void BuildCharacterTab(TabPage page) {
         var p=Panel(page); Caption(p,"Character Studio — reference photo and templates");
