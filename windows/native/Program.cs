@@ -152,7 +152,24 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(analyze);p.Controls.Add(faceStatus);
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
-        Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
+        Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
+        var templatePreview=new PictureBox { Size=new Size(260,260),SizeMode=PictureBoxSizeMode.Zoom,BorderStyle=BorderStyle.FixedSingle };
+        void RefreshTemplatePreview(){
+            try {
+                var id=template.SelectedItem?.ToString();
+                if(string.IsNullOrWhiteSpace(id))return;
+                var folder=id.StartsWith("F")?"Female":"Male";
+                var path=Path.Combine(AppContext.BaseDirectory,"Templates",folder,id+".png");
+                if(!File.Exists(path))return;
+                using var image=Image.FromFile(path);
+                var copy=new Bitmap(image);
+                var previous=templatePreview.Image;
+                templatePreview.Image=copy;previous?.Dispose();
+            }catch(Exception ex){faceStatus.Text="Template preview unavailable: "+ex.Message;}
+        }
+        template.SelectedIndexChanged+=(_,_)=>RefreshTemplatePreview();
+        p.Controls.Add(templatePreview);
+        RefreshTemplatePreview();
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{try{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();}catch(Exception ex){casStatus.Text="Detection unavailable: "+ex.Message;}};
