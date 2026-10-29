@@ -34,6 +34,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if ! gh release view v1.0.9 >/dev/null 2>&1; then
-            gh release create v1.0.9 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.9 Windows Portable Update" --notes "Native tabbed workspace and original CAS room background with crash safeguards. Portable ZIP, no installer."
+          if ! gh release view v1.0.10 >/dev/null 2>&1; then
+            gh release create v1.0.10 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.10 Windows Portable Update" --notes "Native tabbed workspace and original CAS room background with crash safeguards. Portable ZIP, no installer."
+          else
+            gh release upload v1.0.10 Simcraft-Studio-Windows-Portable.zip --clobber
           fi
