@@ -16,10 +16,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Verify bundled executable
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build native desktop executable
         shell: pwsh
-        run: |
-          if (!(Test-Path 'windows/payload/SimcraftStudio.exe')) { throw 'Missing SimcraftStudio.exe' }
+        run: dotnet publish windows/native/SimcraftNative.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o windows/native/publish
+      - name: Replace legacy executable in installer payload
+        shell: pwsh
+        run: Copy-Item windows/native/publish/SimcraftNative.exe windows/payload/SimcraftStudio.exe -Force
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -39,8 +44,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.0.2 >/dev/null 2>&1; then
-            echo "Release v1.0.2 already exists; leaving it unchanged."
+          if gh release view v1.0.3 >/dev/null 2>&1; then
+            echo "Release v1.0.3 already exists; leaving it unchanged."
           else
-            gh release create v1.0.2 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.1 (Windows)" --notes "Version 1.0.2: AI Mod Studio tab and desktop workspace. Automatic signed installation remains disabled pending signing configuration."
+            gh release create v1.0.3 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.3 Native Preview (Windows)" --notes "Version 1.0.2: AI Mod Studio tab and desktop workspace. Automatic signed installation remains disabled pending signing configuration."
           fi
