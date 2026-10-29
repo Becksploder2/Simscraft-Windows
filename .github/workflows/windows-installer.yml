@@ -22,6 +22,10 @@ jobs:
           dotnet publish windows/native/SimcraftNative.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o windows/native/publish
           New-Item -ItemType Directory -Force -Path portable | Out-Null
           Copy-Item windows/payload/* portable -Recurse -Force
+          git clone --depth 1 https://github.com/Becksploder2/simcraft-studio-mac.git template-source
+          New-Item -ItemType Directory -Force -Path portable/Templates | Out-Null
+          Copy-Item template-source/Assets/FaceTemplates/Female portable/Templates/Female -Recurse -Force
+          Copy-Item template-source/Assets/FaceTemplates/Male portable/Templates/Male -Recurse -Force
           Copy-Item windows/native/publish/SimcraftNative.exe portable/SimcraftStudio.exe -Force
           Compress-Archive -Path portable/* -DestinationPath Simcraft-Studio-Windows-Portable.zip
       - uses: actions/upload-artifact@v4
