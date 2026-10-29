@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows.Forms;
 using System.Drawing;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 
 ApplicationConfiguration.Initialize();
@@ -96,6 +97,26 @@ sealed class StudioWindow : Form {
         Caption(p,"Export and import of mod and outfit plans are available in their respective tabs.");
         Caption(p,"Photo previews and manual F1–F19 / M1–M19 selection are available in Character Studio.");
         Caption(p,"The original HTML workspace is not used by this native interface.");
+        var updateStatus=new Label { Text="Update status: not checked",AutoSize=true,ForeColor=Color.White };
+        var check=new Button { Text="Check for updates",AutoSize=true };
+        check.Click+=async (_,_)=>await CheckForUpdates(updateStatus);
+        p.Controls.Add(check);p.Controls.Add(updateStatus);
+    }
+    const string CurrentVersion = "1.0.6";
+    static readonly HttpClient UpdateClient = new() { Timeout=TimeSpan.FromSeconds(15) };
+    async System.Threading.Tasks.Task CheckForUpdates(Label status) {
+        status.Text="Checking GitHub releases...";
+        try {
+            using var request=new HttpRequestMessage(HttpMethod.Get,"https://api.github.com/repos/Becksploder2/Simscraft-Windows/releases/latest");
+            request.Headers.UserAgent.ParseAdd("SimcraftStudio/1.0.6");
+            using var response=await UpdateClient.SendAsync(request);response.EnsureSuccessStatusCode();
+            using var json=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var tag=json.RootElement.GetProperty("tag_name").GetString()??"";
+            if(!Version.TryParse(tag.TrimStart('v','V'),out var latest)||latest<=new Version(CurrentVersion)){status.Text="Up to date (v"+CurrentVersion+").";return;}
+            status.Text="Update available: "+tag;
+            if(MessageBox.Show("Simcraft Studio "+tag+" is available. Open the official release page?","Update available",MessageBoxButtons.YesNo)==DialogResult.Yes)
+                Process.Start(new ProcessStartInfo("https://github.com/Becksploder2/Simscraft-Windows/releases/latest"){UseShellExecute=true});
+        } catch(Exception ex){status.Text="Update check failed: "+ex.Message;}
     }
     void BuildModTab(TabPage page) {
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(22) };
