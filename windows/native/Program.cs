@@ -42,7 +42,7 @@ sealed class StudioWindow : Form {
 
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
-    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.Transparent }; page.Controls.Add(p); return p; }
+    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64), BackgroundImage=page.BackgroundImage, BackgroundImageLayout=ImageLayout.Zoom }; page.Controls.Add(p); return p; }
     static void Caption(FlowLayoutPanel p,string value) => p.Controls.Add(new Label { Text=value, AutoSize=true, ForeColor=Color.White, Margin=new Padding(4,12,4,5) });
     void BuildCharacterTab(TabPage page) {
         var p=Panel(page); Caption(p,"Character Studio — reference photo and templates");
