@@ -19,7 +19,7 @@ sealed class StudioWindow : Form {
     private Image? roomBackground;
     private string? selectedPhoto;
     public StudioWindow() {
-        Text = "Simcraft Studio — Native Desktop Preview"; Width = 1100; Height = 760;
+        Text = "Simcraft Studio"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
@@ -28,9 +28,9 @@ sealed class StudioWindow : Form {
             var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
             if(File.Exists(path)) {
                 using var file=Image.FromFile(path);
-                roomBackground=new Bitmap(1600,900);
+                roomBackground=new Bitmap(1250,800);
                 using var g=Graphics.FromImage(roomBackground);
-                g.DrawImage(file,new Rectangle(0,0,1600,900));
+                g.DrawImage(file,new Rectangle(0,0,1250,800));
             }
         } catch(Exception) { roomBackground?.Dispose(); roomBackground=null; }
         foreach(var title in new[]{"Character Studio","Hair & Glasses","Clothing SmartAssist","CC Library","Face Texture Studio","Glasses Creator","CAS Mod Studio","AI Mod Studio","UV Face Alignment","Buildcraft","Settings"}) {
@@ -63,26 +63,58 @@ sealed class StudioWindow : Form {
         void Fill() { template.Items.Clear(); for(int i=1;i<=19;i++) template.Items.Add((gender.SelectedIndex==0?"F":"M")+i); template.SelectedIndex=0; }
         gender.SelectedIndexChanged+=(_,_)=>Fill(); Fill();
         var choose=new Button { Text="Import reference photo", AutoSize=true };
+        var importStatus=new Label { Text="Ready to import a reference photo",AutoSize=true,ForeColor=Color.White };
         choose.Click+=async (_,_)=>{
-            string file;
-            try { using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.bmp",CheckFileExists=true }; if(dialog.ShowDialog(this)!=DialogResult.OK)return; file=dialog.FileName; }
-            catch(Exception ex){MessageBox.Show(this,"Cannot open file picker: "+ex.Message);return;}
             choose.Enabled=false;
             try {
-                var loaded=await System.Threading.Tasks.Task.Run(()=>{
+                // Run the shell picker on its own STA thread so a stalled Windows shell extension cannot block the main UI.
+                var selection=new System.Threading.Tasks.TaskCompletionSource<string?>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+                var pickerThread=new System.Threading.Thread(()=>{
+                    try {
+                        using var dialog=new OpenFileDialog {
+                            Filter="Images|*.png;*.jpg;*.jpeg;*.bmp",
+                            CheckFileExists=true, AutoUpgradeEnabled=false,
+                            RestoreDirectory=true, DereferenceLinks=true
+                        };
+                        selection.TrySetResult(dialog.ShowDialog()==DialogResult.OK?dialog.FileName:null);
+                    } catch(Exception ex){selection.TrySetException(ex);}
+                });
+                pickerThread.IsBackground=true;
+                pickerThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                pickerThread.Start();
+                importStatus.Text="Opening photo picker...";
+                var completed=await System.Threading.Tasks.Task.WhenAny(selection.Task,System.Threading.Tasks.Task.Delay(30000));
+                if(completed!=selection.Task){importStatus.Text="Photo picker is not responding. Please try again.";return;}
+                var file=await selection.Task;
+                if(string.IsNullOrEmpty(file)){importStatus.Text="Import canceled.";return;}
+                importStatus.Text="Loading photo...";
+                var decode=System.Threading.Tasks.Task.Run(()=>{
                     var info=new FileInfo(file);
                     if(info.Length>40_000_000)throw new InvalidDataException("Image exceeds 40 MB limit.");
                     using var image=Image.FromFile(file);
                     if(image.Width>8192||image.Height>8192||((long)image.Width*image.Height)>30_000_000)
                         throw new InvalidDataException("Image dimensions too large. Resize the photo first.");
-                    return new Bitmap(image);
+                    var thumbnail=new Bitmap(800,600);
+                    using(var g=Graphics.FromImage(thumbnail)){
+                        g.Clear(Color.FromArgb(20,25,35));
+                        var scale=Math.Min(800.0/image.Width,600.0/image.Height);
+                        int w=(int)(image.Width*scale),h=(int)(image.Height*scale);
+                        g.DrawImage(image,(800-w)/2,(600-h)/2,w,h);
+                    }
+                    return thumbnail;
                 });
+                completed=await System.Threading.Tasks.Task.WhenAny(decode,System.Threading.Tasks.Task.Delay(15000));
+                if(completed!=decode){importStatus.Text="Photo decoding timed out; try a smaller image.";return;}
+                var loaded=await decode;
                 if(preview.IsDisposed){loaded.Dispose();return;}
-                var previous=preview.Image;preview.Image=loaded;selectedPhoto=file;previous?.Dispose();
-            } catch(Exception ex){MessageBox.Show(this,"Photo import failed: "+ex.Message);}
+                var previous=preview.Image;
+                preview.Image=loaded;selectedPhoto=file;
+                previous?.Dispose();
+                importStatus.Text="Photo imported successfully.";
+            } catch(Exception ex){importStatus.Text="Import failed: "+ex.Message;}
             finally {if(!choose.IsDisposed)choose.Enabled=true;}
         };
-        p.Controls.Add(choose);p.Controls.Add(preview);
+        p.Controls.Add(choose);p.Controls.Add(importStatus);p.Controls.Add(preview);
         var faceStatus=new Label { Text="Face recognition: no photo analyzed",AutoSize=true,ForeColor=Color.White };
         var analyze=new Button { Text="Analyze face landmarks",AutoSize=true };
         analyze.Click+=async (_,_)=>{
