@@ -44,8 +44,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.0.4 >/dev/null 2>&1; then
-            echo "Release v1.0.4 already exists; leaving it unchanged."
+          if gh release view v1.0.5 >/dev/null 2>&1; then
+            echo "Release v1.0.5 already exists; leaving it unchanged."
           else
-            gh release create v1.0.4 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.4 Native Preview (Windows)" --notes "Version 1.0.2: AI Mod Studio tab and desktop workspace. Automatic signed installation remains disabled pending signing configuration."
+            gh release create v1.0.5 'windows/output/Simcraft-Studio-Setup.exe' --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.5 Native Preview (Windows)" --notes "Version 1.0.2: AI Mod Studio tab and desktop workspace. Automatic signed installation remains disabled pending signing configuration."
           fi
