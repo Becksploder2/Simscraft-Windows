@@ -3,6 +3,8 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
 using System.Drawing;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 ApplicationConfiguration.Initialize();
 Application.Run(new StudioWindow());
@@ -34,6 +36,8 @@ sealed class StudioWindow : Form {
         }
     }
 
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
+    [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
     static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22) }; page.Controls.Add(p); return p; }
     static void Caption(FlowLayoutPanel p,string value) => p.Controls.Add(new Label { Text=value, AutoSize=true, ForeColor=Color.White, Margin=new Padding(4,12,4,5) });
     void BuildCharacterTab(TabPage page) {
@@ -47,7 +51,13 @@ sealed class StudioWindow : Form {
         var choose=new Button { Text="Import reference photo", AutoSize=true };
         choose.Click+=(_,_)=>{ using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.bmp" }; if(dialog.ShowDialog()!=DialogResult.OK)return; try { var old=preview.Image; using var img=Image.FromFile(dialog.FileName); preview.Image=new Bitmap(img); old?.Dispose(); } catch(Exception ex) { MessageBox.Show(ex.Message); } };
         p.Controls.Add(choose);p.Controls.Add(preview);Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
-        Caption(p,"Native photo preview works. Automatic morphing and CAS control require engine migration.");
+        var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
+        var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
+        detect.Click+=(_,_)=>{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();};
+        var capture=new Button { Text="Capture Sims 4 window",AutoSize=true };
+        capture.Click+=(_,_)=>{try{var process=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));if(process==null||process.MainWindowHandle==IntPtr.Zero){casStatus.Text="No visible Sims 4 window found.";return;}if(!GetWindowRect(process.MainWindowHandle,out var rect))throw new Exception("Cannot read game window.");int width=rect.Right-rect.Left,height=rect.Bottom-rect.Top;if(width<100||height<100||width>10000||height>10000)throw new Exception("Invalid window dimensions.");using var image=new Bitmap(width,height);using(var graphics=Graphics.FromImage(image)){graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(width,height));}using var dialog=new SaveFileDialog{Filter="PNG image|*.png",FileName="Simcraft-CAS-Capture.png"};if(dialog.ShowDialog()==DialogResult.OK){image.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png);casStatus.Text="Captured game window to "+dialog.FileName+". CAS mode is not automatically verified.";}process.Dispose();}catch(Exception ex){casStatus.Text="Capture failed: "+ex.Message;}};
+        p.Controls.Add(detect);p.Controls.Add(capture);p.Controls.Add(casStatus);
+        Caption(p,"Window detection and capture only. Automatic morphing and CAS controls are not yet implemented.");
     }
     void BuildPreferencesTab(TabPage page) {
         var p=Panel(page);Caption(p,"Hair & Glasses");
