@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'windows/payload/**'
+      - 'windows/**'
       - '.github/workflows/windows-installer.yml'
 jobs:
   portable:
@@ -13,11 +13,17 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Package restored legacy app without installer
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build native tabbed app with legacy resources
         shell: pwsh
         run: |
-          if (!(Test-Path windows/payload/SimcraftStudio.exe)) { throw "Legacy executable missing" }
-          Compress-Archive -Path windows/payload/* -DestinationPath Simcraft-Studio-Windows-Portable.zip
+          dotnet publish windows/native/SimcraftNative.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o windows/native/publish
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item windows/payload/* portable -Recurse -Force
+          Copy-Item windows/native/publish/SimcraftNative.exe portable/SimcraftStudio.exe -Force
+          Compress-Archive -Path portable/* -DestinationPath Simcraft-Studio-Windows-Portable.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Simcraft-Studio-Windows-Portable
@@ -29,5 +35,5 @@ jobs:
         shell: bash
         run: |
           if ! gh release view v1.0.7 >/dev/null 2>&1; then
-            gh release create v1.0.7 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.7 Windows Portable Rollback" --notes "Restores the pre-native executable and assets. No installer. Native tab migration will be handled separately."
+            gh release create v1.0.7 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.7 Windows Portable Rollback" --notes "Combines native tabbed workspace with retained legacy resource assets. Portable ZIP, no installer. Legacy HTML tools are not wired into native tabs yet."
           fi
