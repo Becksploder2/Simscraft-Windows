@@ -17,16 +17,25 @@ sealed class StudioWindow : Form {
     readonly TextBox description = new() { Width = 650, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical };
     readonly CheckBox compatibility = new() { Text = "Include compatibility checks", Checked = true, AutoSize = true };
     private Image? roomBackground;
+    private string? selectedPhoto;
     public StudioWindow() {
         Text = "Simcraft Studio — Native Desktop Preview"; Width = 1100; Height = 760;
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
         Shown += async (_,_) => { await System.Threading.Tasks.Task.Delay(1200); if(!IsDisposed) await CheckForUpdates(null); };
-        try { var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png"); if(File.Exists(path)) { using var file=Image.FromFile(path); roomBackground=new Bitmap(file); } } catch(Exception) { roomBackground=null; }
+        try {
+            var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
+            if(File.Exists(path)) {
+                using var file=Image.FromFile(path);
+                roomBackground=new Bitmap(1600,900);
+                using var g=Graphics.FromImage(roomBackground);
+                g.DrawImage(file,new Rectangle(0,0,1600,900));
+            }
+        } catch(Exception) { roomBackground?.Dispose(); roomBackground=null; }
         foreach(var title in new[]{"Character Studio","Hair & Glasses","Clothing SmartAssist","CC Library","Face Texture Studio","Glasses Creator","CAS Mod Studio","AI Mod Studio","UV Face Alignment","Buildcraft","Settings"}) {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
-            if(roomBackground != null) { page.BackgroundImage=roomBackground; page.BackgroundImageLayout=ImageLayout.Zoom; }
+            if(roomBackground != null) { page.BackgroundImage=roomBackground; page.BackgroundImageLayout=ImageLayout.Stretch; }
             tabs.TabPages.Add(page);
             if(title == "AI Mod Studio") BuildModTab(page);
             else if(title == "Character Studio") BuildCharacterTab(page);
@@ -43,7 +52,7 @@ sealed class StudioWindow : Form {
 
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
-    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64), BackgroundImage=page.BackgroundImage, BackgroundImageLayout=ImageLayout.Zoom }; page.Controls.Add(p); return p; }
+    static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64), BackgroundImage=page.BackgroundImage, BackgroundImageLayout=ImageLayout.Stretch }; page.Controls.Add(p); return p; }
     static void Caption(FlowLayoutPanel p,string value) => p.Controls.Add(new Label { Text=value, AutoSize=true, ForeColor=Color.White, Margin=new Padding(4,12,4,5) });
     void BuildCharacterTab(TabPage page) {
         var p=Panel(page); Caption(p,"Character Studio — reference photo and templates");
@@ -69,11 +78,48 @@ sealed class StudioWindow : Form {
                     return new Bitmap(image);
                 });
                 if(preview.IsDisposed){loaded.Dispose();return;}
-                var previous=preview.Image;preview.Image=loaded;previous?.Dispose();
+                var previous=preview.Image;preview.Image=loaded;selectedPhoto=file;previous?.Dispose();
             } catch(Exception ex){MessageBox.Show(this,"Photo import failed: "+ex.Message);}
             finally {if(!choose.IsDisposed)choose.Enabled=true;}
         };
-        p.Controls.Add(choose);p.Controls.Add(preview);Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
+        p.Controls.Add(choose);p.Controls.Add(preview);
+        var faceStatus=new Label { Text="Face recognition: no photo analyzed",AutoSize=true,ForeColor=Color.White };
+        var analyze=new Button { Text="Analyze face landmarks",AutoSize=true };
+        analyze.Click+=async (_,_)=>{
+            if(string.IsNullOrEmpty(selectedPhoto)){faceStatus.Text="Import a photo first.";return;}
+            var root=AppContext.BaseDirectory;
+            var script=Path.Combine(root,"FaceEngine","analyze_faces.py");
+            var model=Path.Combine(root,"Models","face_landmarker.task");
+            if(!File.Exists(script)||!File.Exists(model)){
+                faceStatus.Text="Face engine unavailable: bundled MediaPipe model or script missing.";return;
+            }
+            analyze.Enabled=false;faceStatus.Text="Analyzing face...";
+            try {
+                var output=Path.Combine(Path.GetTempPath(),"simcraft-face-"+Guid.NewGuid().ToString("N")+".json");
+                using var process=new Process { StartInfo=new ProcessStartInfo {
+                    FileName="pythonw",UseShellExecute=false,CreateNoWindow=true,
+                    RedirectStandardError=true,RedirectStandardOutput=true
+                }};
+                process.StartInfo.ArgumentList.Add(script);
+                process.StartInfo.ArgumentList.Add(selectedPhoto);
+                process.StartInfo.ArgumentList.Add("--model");
+                process.StartInfo.ArgumentList.Add(model);
+                process.StartInfo.ArgumentList.Add("--output");
+                process.StartInfo.ArgumentList.Add(output);
+                process.Start();
+                using var cancel=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20));
+                try { await process.WaitForExitAsync(cancel.Token); }
+                catch(OperationCanceledException){process.Kill(entireProcessTree:true);faceStatus.Text="Face analysis timed out.";return;}
+                if(process.ExitCode!=0||!File.Exists(output)){faceStatus.Text="Face analysis failed. Check the MediaPipe runtime.";return;}
+                using var data=JsonDocument.Parse(await File.ReadAllTextAsync(output));
+                int count=data.RootElement.GetProperty("reference").GetProperty("face_count").GetInt32();
+                faceStatus.Text=count>0?"Face recognized; landmarks extracted. Automatic CAS template matching is not yet available.":"No face detected. Try a clear frontal photo.";
+                File.Delete(output);
+            } catch(Exception ex){faceStatus.Text="Face recognition unavailable: "+ex.Message;}
+            finally {if(!analyze.IsDisposed)analyze.Enabled=true;}
+        };
+        p.Controls.Add(analyze);p.Controls.Add(faceStatus);
+        Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (manual; auto-detection not ported)");p.Controls.Add(template);
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{try{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();}catch(Exception ex){casStatus.Text="Detection unavailable: "+ex.Message;}};
