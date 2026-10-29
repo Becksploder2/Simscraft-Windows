@@ -22,6 +22,7 @@ sealed class StudioWindow : Form {
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
+        Shown += async (_,_) => { await System.Threading.Tasks.Task.Delay(1200); if(!IsDisposed) await CheckForUpdates(null); };
         try { var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png"); if(File.Exists(path)) { using var file=Image.FromFile(path); roomBackground=new Bitmap(file); } } catch(Exception) { roomBackground=null; }
         foreach(var title in new[]{"Character Studio","Hair & Glasses","Clothing SmartAssist","CC Library","Face Texture Studio","Glasses Creator","CAS Mod Studio","AI Mod Studio","UV Face Alignment","Buildcraft","Settings"}) {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
@@ -123,21 +124,21 @@ sealed class StudioWindow : Form {
         check.Click+=async (_,_)=>await CheckForUpdates(updateStatus);
         p.Controls.Add(check);p.Controls.Add(updateStatus);
     }
-    const string CurrentVersion = "1.0.8";
+    const string CurrentVersion = "1.0.9";
     static readonly HttpClient UpdateClient = new() { Timeout=TimeSpan.FromSeconds(15) };
-    async System.Threading.Tasks.Task CheckForUpdates(Label status) {
-        status.Text="Checking GitHub releases...";
+    async System.Threading.Tasks.Task CheckForUpdates(Label? status) {
+        if(status!=null)status.Text="Checking GitHub releases...";
         try {
             using var request=new HttpRequestMessage(HttpMethod.Get,"https://api.github.com/repos/Becksploder2/Simscraft-Windows/releases/latest");
-            request.Headers.UserAgent.ParseAdd("SimcraftStudio/1.0.8");
+            request.Headers.UserAgent.ParseAdd("SimcraftStudio/1.0.9");
             using var response=await UpdateClient.SendAsync(request);response.EnsureSuccessStatusCode();
             using var json=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var tag=json.RootElement.GetProperty("tag_name").GetString()??"";
-            if(!Version.TryParse(tag.TrimStart('v','V'),out var latest)||latest<=new Version(CurrentVersion)){status.Text="Up to date (v"+CurrentVersion+").";return;}
-            status.Text="Update available: "+tag;
+            if(!Version.TryParse(tag.TrimStart('v','V'),out var latest)||latest<=new Version(CurrentVersion)){if(status!=null)status.Text="Up to date (v"+CurrentVersion+").";return;}
+            if(status!=null)status.Text="Update available: "+tag;
             if(MessageBox.Show("Simcraft Studio "+tag+" is available. Open the official release page?","Update available",MessageBoxButtons.YesNo)==DialogResult.Yes)
                 Process.Start(new ProcessStartInfo("https://github.com/Becksploder2/Simscraft-Windows/releases/latest"){UseShellExecute=true});
-        } catch(Exception ex){status.Text="Update check failed: "+ex.Message;}
+        } catch(Exception ex){if(status!=null)status.Text="Update check failed: "+ex.Message;}
     }
     void BuildModTab(TabPage page) {
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(22) };
