@@ -29,11 +29,11 @@ jobs:
           name: Simcraft-Studio-Windows-Portable
           path: Simcraft-Studio-Windows-Portable.zip
           if-no-files-found: error
-      - name: Publish rollback release
+      - name: Publish portable update release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if ! gh release view v1.0.7 >/dev/null 2>&1; then
-            gh release create v1.0.7 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.7 Windows Portable Rollback" --notes "Combines native tabbed workspace with retained legacy resource assets. Portable ZIP, no installer. Legacy HTML tools are not wired into native tabs yet."
+          if ! gh release view v1.0.8 >/dev/null 2>&1; then
+            gh release create v1.0.8 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.8 Windows Portable Update" --notes "Native tabbed workspace and original CAS room background with crash safeguards. Portable ZIP, no installer."
           fi
