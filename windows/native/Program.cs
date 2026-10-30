@@ -242,7 +242,7 @@ sealed class StudioWindow : Form {
                     using var reader=new BinaryReader(stream);
                     var magic=System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4));
                     if(magic!="DBPF")throw new InvalidDataException("Not a DBPF Sims package.");
-                    stream.Position=32;
+                    stream.Position=36;
                     var count=reader.ReadUInt32();
                     if(count>2_000_000)throw new InvalidDataException("Resource count exceeds safety limit.");
                     return $"File: {Path.GetFileName(path)}\\r\\nSize: {stream.Length:N0} bytes\\r\\nFormat: DBPF\\r\\nHeader resource count (preliminary): {count:N0}\\r\\n\\r\\nRead-only reference import. Resource extraction, tuning interpretation, and package editing are not implemented yet.";
