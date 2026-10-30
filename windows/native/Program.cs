@@ -43,6 +43,7 @@ sealed class StudioWindow : Form {
             else if(title == "Clothing SmartAssist") BuildClothingTab(page);
             else if(title == "CC Library") BuildCatalogTab(page);
             else if(title == "CAS Mod Studio") BuildPackageTab(page);
+            else if(title == "Buildcraft") BuildBuildcraftTab(page);
             else if(title == "Settings") BuildSettingsTab(page);
             else {
                 var info = new Label { Text = title + "\n\nNative migration in progress. The previous HTML tool has not yet been ported.", AutoSize = true, Location = new Point(30, 35), ForeColor = Color.White };
@@ -253,6 +254,53 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(import);p.Controls.Add(status);p.Controls.Add(report);
         Caption(p,"Use existing packages for research. Do not redistribute third-party assets without permission.");
+    }
+    void BuildBuildcraftTab(TabPage page) {
+        var p=Panel(page);
+        Caption(p,"Buildcraft — Sims 4 Build Mode workspace (early prototype)");
+        Caption(p,"Describe the building or lot");
+        var prompt=new TextBox { Width=760,Height=110,Multiline=true,ScrollBars=ScrollBars.Vertical };
+        p.Controls.Add(prompt);
+        Caption(p,"Lot width (tiles)");
+        var width=new NumericUpDown { Minimum=10,Maximum=64,Value=30,Width=120 };
+        p.Controls.Add(width);
+        Caption(p,"Lot depth (tiles)");
+        var depth=new NumericUpDown { Minimum=10,Maximum=64,Value=20,Width=120 };
+        p.Controls.Add(depth);
+        var status=new Label { Text="Not connected to Build Mode.",AutoSize=true,ForeColor=Color.White };
+        var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
+        detect.Click+=(_,_)=>{
+            try {
+                var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();
+                status.Text=games.Length>0?"The Sims 4 detected. Build Mode not verified.":"The Sims 4 not detected.";
+                foreach(var game in games)game.Dispose();
+            }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
+        };
+        p.Controls.Add(detect);p.Controls.Add(status);
+        var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
+        var plan=new Button { Text="Create starter build plan",AutoSize=true };
+        plan.Click+=(_,_)=>{
+            if(string.IsNullOrWhiteSpace(prompt.Text)){status.Text="Describe the building first.";return;}
+            var text=prompt.Text.Trim();
+            output.Text="BUILDCRAFT DRAFT PLAN"+Environment.NewLine+
+                "Lot: "+width.Value+" x "+depth.Value+" tiles"+Environment.NewLine+
+                "Description: "+text+Environment.NewLine+Environment.NewLine+
+                "Status: Draft specification only. AI floorplan generation, Build Mode recognition, and automated construction are not connected yet.";
+            status.Text="Draft plan created locally. No game actions performed.";
+        };
+        p.Controls.Add(plan);p.Controls.Add(output);
+        var export=new Button { Text="Export Buildcraft project",AutoSize=true };
+        export.Click+=(_,_)=>{
+            if(string.IsNullOrWhiteSpace(prompt.Text)){status.Text="Describe the building first.";return;}
+            using var dialog=new SaveFileDialog { Filter="JSON files|*.json",FileName="buildcraft-project.json" };
+            if(dialog.ShowDialog()!=DialogResult.OK)return;
+            try {
+                File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(new {format="simcraft-buildcraft-project",schemaVersion=1,lotWidth=(int)width.Value,lotDepth=(int)depth.Value,description=prompt.Text,constructionEnabled=false},new JsonSerializerOptions {WriteIndented=true}));
+                status.Text="Buildcraft project exported.";
+            }catch(Exception ex){status.Text="Export failed: "+ex.Message;}
+        };
+        p.Controls.Add(export);
+        Caption(p,"Safety: No input is sent to the game. Build Mode automation requires verified detection and explicit approval.");
     }
     void BuildSettingsTab(TabPage page) {
         var p=Panel(page);Caption(p,"Simcraft Studio — native preview");
