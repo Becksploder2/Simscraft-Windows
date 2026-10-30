@@ -288,6 +288,23 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
         };
         p.Controls.Add(detect);p.Controls.Add(status);
+        var captureBuild=new Button { Text="Capture Build/Buy screen",AutoSize=true };
+        captureBuild.Click+=(_,_)=>{
+            try {
+                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+                if(game==null || game.MainWindowHandle==IntPtr.Zero){status.Text="No visible Sims 4 window found.";return;}
+                if(!GetWindowRect(game.MainWindowHandle,out var rect))throw new IOException("Cannot read Sims 4 window.");
+                int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
+                if(w<100||h<100||w>10000||h>10000)throw new InvalidDataException("Invalid game window dimensions.");
+                using var shot=new Bitmap(w,h);
+                using(var graphics=Graphics.FromImage(shot))graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(w,h));
+                using var dialog=new SaveFileDialog { Filter="PNG image|*.png",FileName="Simcraft-BuildBuy-Capture.png" };
+                if(dialog.ShowDialog()!=DialogResult.OK)return;
+                shot.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png);
+                status.Text="Game screenshot saved. Build/Buy mode has not been verified.";
+            }catch(Exception ex){status.Text="Capture failed: "+ex.Message;}
+        };
+        p.Controls.Add(captureBuild);
         var connectionMonitor=new System.Windows.Forms.Timer { Interval=3000 };
         connectionMonitor.Tick+=(_,_)=>{
             if(!status.IsDisposed && (status.Text.StartsWith("The Sims 4") || status.Text.StartsWith("Checking") || status.Text.StartsWith("Sims 4")))
