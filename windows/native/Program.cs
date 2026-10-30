@@ -266,6 +266,38 @@ sealed class StudioWindow : Form {
         p.Controls.Add(import);p.Controls.Add(status);p.Controls.Add(report);
         Caption(p,"Use existing packages for research. Do not redistribute third-party assets without permission.");
     }
+    static Bitmap CaptureSimsWindow() {
+        using var game=Process.GetProcesses().FirstOrDefault(x=>
+            x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
+            x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+        if(game==null)throw new InvalidOperationException("The Sims 4 is not running.");
+        if(game.MainWindowHandle==IntPtr.Zero)throw new InvalidOperationException("No visible Sims 4 window found.");
+        if(!GetWindowRect(game.MainWindowHandle,out var rect))throw new IOException("Cannot locate Sims 4 window.");
+        int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
+        if(w<300||h<300||w>8192||h>8192||((long)w*h)>30_000_000)
+            throw new InvalidDataException("Invalid game window size.");
+        var image=new Bitmap(w,h);
+        try {
+            using(var graphics=Graphics.FromImage(image))
+                graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(w,h));
+            return image;
+        } catch {image.Dispose();throw;}
+    }
+    // Compare the stable lower-left Build/Buy toolbar region, not the changing lot view.
+    static double BuildUiSimilarity(Bitmap a,Bitmap b) {
+        if(Math.Abs((double)a.Width/a.Height-(double)b.Width/b.Height)>0.08)return 0;
+        double difference=0;
+        const int nx=32,ny=14;
+        for(int y=0;y<ny;y++)for(int x=0;x<nx;x++){
+            int ax=Math.Clamp((int)((0.02+0.42*(x+0.5)/nx)*a.Width),0,a.Width-1);
+            int bx=Math.Clamp((int)((0.02+0.42*(x+0.5)/nx)*b.Width),0,b.Width-1);
+            int ay=Math.Clamp((int)((0.79+0.19*(y+0.5)/ny)*a.Height),0,a.Height-1);
+            int by=Math.Clamp((int)((0.79+0.19*(y+0.5)/ny)*b.Height),0,b.Height-1);
+            var ca=a.GetPixel(ax,ay);var cb=b.GetPixel(bx,by);
+            difference+=(Math.Abs(ca.R-cb.R)+Math.Abs(ca.G-cb.G)+Math.Abs(ca.B-cb.B))/3.0;
+        }
+        return Math.Max(0,1-difference/(nx*ny*255));
+    }
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
         Caption(p,"Buildcraft — Sims 4 Build Mode workspace (early prototype)");
@@ -320,6 +352,39 @@ sealed class StudioWindow : Form {
             finally{captureBuild.Enabled=true;}
         };
         p.Controls.Add(captureBuild);
+        var calibrationFile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Simcraft Studio","Buildcraft-BuildBuy-Reference.png");
+        var calibrate=new Button { Text="Calibrate Build/Buy (capture while in Build Mode)",AutoSize=true };
+        var verify=new Button { Text="Check Build/Buy Mode",AutoSize=true };
+        calibrate.Click+=async (_,_)=>{
+            calibrate.Enabled=false;verify.Enabled=false;
+            status.Text="Recording Build/Buy toolbar reference...";
+            try {
+                await System.Threading.Tasks.Task.Run(()=>{
+                    using var image=CaptureSimsWindow();
+                    Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
+                    image.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
+                }).WaitAsync(TimeSpan.FromSeconds(15));
+                status.Text="Build/Buy reference saved. Switch to Live Mode and test detection, then return to Build Mode.";
+            }catch(Exception ex){status.Text="Calibration failed: "+ex.Message;}
+            finally{calibrate.Enabled=true;verify.Enabled=true;}
+        };
+        verify.Click+=async (_,_)=>{
+            if(!File.Exists(calibrationFile)){status.Text="Calibrate while in Build/Buy Mode first.";return;}
+            calibrate.Enabled=false;verify.Enabled=false;
+            status.Text="Checking visible Build/Buy interface...";
+            try {
+                var score=await System.Threading.Tasks.Task.Run(()=>{
+                    using var reference=new Bitmap(calibrationFile);
+                    using var current=CaptureSimsWindow();
+                    return BuildUiSimilarity(reference,current);
+                }).WaitAsync(TimeSpan.FromSeconds(15));
+                status.Text=score>=0.87
+                    ? "Build/Buy toolbar likely detected ("+score.ToString("P0")+" visual match; not game-API verified)."
+                    : "Build/Buy toolbar not confirmed ("+score.ToString("P0")+" match). Check mode and recalibrate if needed.";
+            }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
+            finally{calibrate.Enabled=true;verify.Enabled=true;}
+        };
+        p.Controls.Add(calibrate);p.Controls.Add(verify);
         var connectionMonitor=new System.Windows.Forms.Timer { Interval=3000 };
         connectionMonitor.Tick+=(_,_)=>{
             if(status.IsDisposed || tabs.SelectedTab != page)return;
