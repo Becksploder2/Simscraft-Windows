@@ -52,6 +52,17 @@ sealed class StudioWindow : Form {
         }
     }
 
+    static bool SimsRunning() {
+        try {
+            foreach(var game in Process.GetProcesses()) {
+                using(game) {
+                    if(game.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
+                       game.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)) return true;
+                }
+            }
+        } catch { }
+        return false;
+    }
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
     static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64), BackgroundImage=page.BackgroundImage, BackgroundImageLayout=ImageLayout.Stretch }; page.Controls.Add(p); return p; }
@@ -267,7 +278,7 @@ sealed class StudioWindow : Form {
         Caption(p,"Lot depth (tiles)");
         var depth=new NumericUpDown { Minimum=10,Maximum=64,Value=20,Width=120 };
         p.Controls.Add(depth);
-        var status=new Label { Text="Not connected to Build Mode.",AutoSize=true,ForeColor=Color.White };
+        var status=new Label { Text="Checking Sims 4 connection...",AutoSize=true,ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{
             try {
@@ -277,6 +288,14 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
         };
         p.Controls.Add(detect);p.Controls.Add(status);
+        var connectionMonitor=new System.Windows.Forms.Timer { Interval=3000 };
+        connectionMonitor.Tick+=(_,_)=>{
+            if(!status.IsDisposed && (status.Text.StartsWith("The Sims 4") || status.Text.StartsWith("Checking") || status.Text.StartsWith("Sims 4")))
+                status.Text=SimsRunning()?"The Sims 4 connected. Build/Buy mode not yet verified.":"The Sims 4 is not running.";
+        };
+        connectionMonitor.Start();
+        page.Disposed+=(_,_)=>connectionMonitor.Dispose();
+        status.Text=SimsRunning()?"The Sims 4 connected. Build/Buy mode not yet verified.":"The Sims 4 is not running.";
         var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
         var plan=new Button { Text="Create starter build plan",AutoSize=true };
         plan.Click+=(_,_)=>{
