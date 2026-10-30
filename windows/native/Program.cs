@@ -385,6 +385,42 @@ sealed class StudioWindow : Form {
             finally{calibrate.Enabled=true;verify.Enabled=true;}
         };
         p.Controls.Add(calibrate);p.Controls.Add(verify);
+        Caption(p,"Construction controller — safety-first preview");
+        var constructionState=new Label { Text="Idle. No game input authorized.",AutoSize=true,ForeColor=Color.White };
+        var allowControl=new CheckBox { Text="I approve Buildcraft controlling The Sims 4 after verification",AutoSize=true,ForeColor=Color.White };
+        var arm=new Button { Text="Arm construction (verify mode)",AutoSize=true };
+        var stop=new Button { Text="EMERGENCY STOP",AutoSize=true,BackColor=Color.DarkRed,ForeColor=Color.White };
+        var constructionCancel=new System.Threading.CancellationTokenSource();
+        bool armed=false;
+        stop.Click+=(_,_)=>{
+            constructionCancel.Cancel();
+            constructionCancel.Dispose();
+            constructionCancel=new System.Threading.CancellationTokenSource();
+            armed=false;
+            allowControl.Checked=false;
+            constructionState.Text="STOPPED. Construction disarmed. No game input will be sent.";
+        };
+        arm.Click+=async (_,_)=>{
+            armed=false;
+            if(!allowControl.Checked){constructionState.Text="Approve game control first.";return;}
+            if(string.IsNullOrWhiteSpace(prompt.Text)){constructionState.Text="Describe the house before arming.";return;}
+            if(!File.Exists(calibrationFile)){constructionState.Text="Calibrate Build/Buy mode first.";return;}
+            arm.Enabled=false;
+            try {
+                var score=await System.Threading.Tasks.Task.Run(()=>{
+                    using var reference=new Bitmap(calibrationFile);
+                    using var current=CaptureSimsWindow();
+                    return BuildUiSimilarity(reference,current);
+                }).WaitAsync(TimeSpan.FromSeconds(15),constructionCancel.Token);
+                if(score<0.87){constructionState.Text="Not armed: Build/Buy interface unconfirmed ("+score.ToString("P0")+").";return;}
+                armed=true;
+                constructionState.Text="Build/Buy visually matched ("+score.ToString("P0")+"). Controller armed in DRY RUN only. Automatic wall placement is not implemented.";
+            }catch(OperationCanceledException){constructionState.Text="STOPPED.";}
+             catch(Exception ex){constructionState.Text="Cannot arm: "+ex.Message;}
+            finally{arm.Enabled=true;}
+        };
+        p.Controls.Add(allowControl);p.Controls.Add(arm);p.Controls.Add(stop);p.Controls.Add(constructionState);
+        page.Disposed+=(_,_)=>constructionCancel.Dispose();
         var connectionMonitor=new System.Windows.Forms.Timer { Interval=3000 };
         connectionMonitor.Tick+=(_,_)=>{
             if(status.IsDisposed || tabs.SelectedTab != page)return;
