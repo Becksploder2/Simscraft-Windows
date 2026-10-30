@@ -289,30 +289,46 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(detect);p.Controls.Add(status);
         var captureBuild=new Button { Text="Capture Build/Buy screen",AutoSize=true };
-        captureBuild.Click+=(_,_)=>{
+        captureBuild.Click+=async (_,_)=>{
+            captureBuild.Enabled=false;
+            status.Text="Capturing Sims 4 window in background...";
             try {
-                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
-                if(game==null || game.MainWindowHandle==IntPtr.Zero){status.Text="No visible Sims 4 window found.";return;}
-                if(!GetWindowRect(game.MainWindowHandle,out var rect))throw new IOException("Cannot read Sims 4 window.");
-                int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
-                if(w<100||h<100||w>10000||h>10000)throw new InvalidDataException("Invalid game window dimensions.");
-                using var shot=new Bitmap(w,h);
-                using(var graphics=Graphics.FromImage(shot))graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(w,h));
-                using var dialog=new SaveFileDialog { Filter="PNG image|*.png",FileName="Simcraft-BuildBuy-Capture.png" };
-                if(dialog.ShowDialog()!=DialogResult.OK)return;
-                shot.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png);
-                status.Text="Game screenshot saved. Build/Buy mode has not been verified.";
-            }catch(Exception ex){status.Text="Capture failed: "+ex.Message;}
+                var result=await System.Threading.Tasks.Task.Run(()=>{
+                    using var game=Process.GetProcesses().FirstOrDefault(x=>
+                        x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
+                        x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+                    if(game==null)return "The Sims 4 process was not found.";
+                    var handle=game.MainWindowHandle;
+                    if(handle==IntPtr.Zero)return "Sims 4 is running, but no visible game window was found.";
+                    if(!GetWindowRect(handle,out var rect))return "Unable to locate the Sims 4 window.";
+                    int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
+                    if(w<100||h<100||w>8192||h>8192||((long)w*h)>30_000_000)
+                        return "Game window dimensions are invalid or too large.";
+                    var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Simcraft Studio","Buildcraft");
+                    Directory.CreateDirectory(folder);
+                    var filename=Path.Combine(folder,"BuildBuy-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".png");
+                    using(var shot=new Bitmap(w,h)){
+                        using(var graphics=Graphics.FromImage(shot))
+                            graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(w,h));
+                        shot.Save(filename,System.Drawing.Imaging.ImageFormat.Png);
+                    }
+                    return "Capture saved: "+filename+" (Build/Buy mode not yet verified).";
+                }).WaitAsync(TimeSpan.FromSeconds(15));
+                status.Text=result;
+            } catch(TimeoutException){status.Text="Capture timed out. The interface remains responsive.";}
+              catch(Exception ex){status.Text="Capture failed: "+ex.Message;}
+            finally{captureBuild.Enabled=true;}
         };
         p.Controls.Add(captureBuild);
         var connectionMonitor=new System.Windows.Forms.Timer { Interval=3000 };
         connectionMonitor.Tick+=(_,_)=>{
-            if(!status.IsDisposed && (status.Text.StartsWith("The Sims 4") || status.Text.StartsWith("Checking") || status.Text.StartsWith("Sims 4")))
-                status.Text=SimsRunning()?"The Sims 4 connected. Build/Buy mode not yet verified.":"The Sims 4 is not running.";
+            if(status.IsDisposed || tabs.SelectedTab != page)return;
+            if(status.Text.StartsWith("The Sims 4") || status.Text.StartsWith("Checking") || status.Text.StartsWith("Sims 4"))
+                status.Text=SimsRunning()?"The Sims 4 process connected. Build/Buy mode not verified.":"The Sims 4 is not running.";
         };
         connectionMonitor.Start();
         page.Disposed+=(_,_)=>connectionMonitor.Dispose();
-        status.Text=SimsRunning()?"The Sims 4 connected. Build/Buy mode not yet verified.":"The Sims 4 is not running.";
+        status.Text=SimsRunning()?"The Sims 4 process connected. Build/Buy mode not verified.":"The Sims 4 is not running.";
         var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
         var plan=new Button { Text="Create starter build plan",AutoSize=true };
         plan.Click+=(_,_)=>{
