@@ -42,6 +42,7 @@ sealed class StudioWindow : Form {
             else if(title == "Hair & Glasses") BuildPreferencesTab(page);
             else if(title == "Clothing SmartAssist") BuildClothingTab(page);
             else if(title == "CC Library") BuildCatalogTab(page);
+            else if(title == "CAS Mod Studio") BuildPackageTab(page);
             else if(title == "Settings") BuildSettingsTab(page);
             else {
                 var info = new Label { Text = title + "\n\nNative migration in progress. The previous HTML tool has not yet been ported.", AutoSize = true, Location = new Point(30, 35), ForeColor = Color.White };
@@ -222,6 +223,36 @@ sealed class StudioWindow : Form {
         button.Click+=(_,_)=>{using var dialog=new OpenFileDialog { Filter="Catalog|*.json;*.csv" };if(dialog.ShowDialog()!=DialogResult.OK)return;try{var content=File.ReadAllText(dialog.FileName);if(Path.GetExtension(dialog.FileName).Equals(".json",StringComparison.OrdinalIgnoreCase)){using var parsed=JsonDocument.Parse(content);status.Text="JSON catalog loaded";}else status.Text="CSV catalog loaded";results.Text=content.Length>16000?content[..16000]:content;}catch(Exception ex){MessageBox.Show(ex.Message);}};
         p.Controls.Add(button);p.Controls.Add(status);p.Controls.Add(results);
         Caption(p,"Read-only import; Sims 4 package resource parsing is not implemented.");
+    }
+    void BuildPackageTab(TabPage page) {
+        var p=Panel(page);
+        Caption(p,"CAS Mod Studio — inspect existing Sims 4 packages (read-only)");
+        var status=new Label { Text="No package imported.",AutoSize=true,ForeColor=Color.White };
+        var report=new TextBox { Width=800,Height=370,Multiline=true,ScrollBars=ScrollBars.Both,ReadOnly=true,Font=new Font("Consolas",10) };
+        var import=new Button { Text="Import .package reference",AutoSize=true };
+        import.Click+=async (_,_)=>{
+            using var dialog=new OpenFileDialog { Filter="Sims 4 package|*.package",CheckFileExists=true };
+            if(dialog.ShowDialog()!=DialogResult.OK)return;
+            import.Enabled=false;status.Text="Inspecting package...";
+            try {
+                var path=dialog.FileName;
+                var result=await System.Threading.Tasks.Task.Run(()=>{
+                    using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read);
+                    if(stream.Length<96||stream.Length>2_000_000_000L)throw new InvalidDataException("Invalid or oversized package.");
+                    using var reader=new BinaryReader(stream);
+                    var magic=System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4));
+                    if(magic!="DBPF")throw new InvalidDataException("Not a DBPF Sims package.");
+                    stream.Position=32;
+                    var count=reader.ReadUInt32();
+                    if(count>2_000_000)throw new InvalidDataException("Resource count exceeds safety limit.");
+                    return $"File: {Path.GetFileName(path)}\\r\\nSize: {stream.Length:N0} bytes\\r\\nFormat: DBPF\\r\\nHeader resource count (preliminary): {count:N0}\\r\\n\\r\\nRead-only reference import. Resource extraction, tuning interpretation, and package editing are not implemented yet.";
+                });
+                report.Text=result;status.Text="Package header inspected. Original file unchanged.";
+            }catch(Exception ex){status.Text="Import failed: "+ex.Message;}
+            finally{import.Enabled=true;}
+        };
+        p.Controls.Add(import);p.Controls.Add(status);p.Controls.Add(report);
+        Caption(p,"Use existing packages for research. Do not redistribute third-party assets without permission.");
     }
     void BuildSettingsTab(TabPage page) {
         var p=Panel(page);Caption(p,"Simcraft Studio — native preview");
