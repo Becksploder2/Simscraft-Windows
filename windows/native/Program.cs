@@ -195,6 +195,10 @@ sealed class StudioWindow : Form {
         var morphFeature = new ComboBox { Width=220, DropDownStyle=ComboBoxStyle.DropDownList };
         morphFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","cheeks","mouth_lips","chin_jaw","forehead"});
         morphFeature.SelectedIndex=0;
+        var completedFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var completedStatus = new Label { Text="Completed features: none",AutoSize=true,ForeColor=Color.White };
+        var resetCompleted = new Button { Text="Reset Completed Features (New Sim)",AutoSize=true };
+        resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";hoverStatus.Text="All features available again.";};
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Auto Morph changes only the selected feature. Calibrate each facial region independently in Detail Edit." };
@@ -213,6 +217,7 @@ sealed class StudioWindow : Form {
             string? nearest=null;
             double nearestDistance=double.MaxValue;
             foreach(var item in morphCalibration.Points) {
+                if(completedFeatures.Contains(item.Key))continue;
                 double dx=cursor.X-rect.Left-item.Value.X,dy=cursor.Y-rect.Top-item.Value.Y;
                 double distance=dx*dx+dy*dy;
                 if(distance<nearestDistance){nearestDistance=distance;nearest=item.Key;}
@@ -279,6 +284,7 @@ sealed class StudioWindow : Form {
                 // Auto Morph acts only on the selected/hovered feature, never on the whole face.
                 var selectedFeature=morphFeature.SelectedItem?.ToString();
                 if(string.IsNullOrWhiteSpace(selectedFeature))throw new InvalidOperationException("Select a facial feature first.");
+                if(completedFeatures.Contains(selectedFeature))throw new InvalidOperationException(selectedFeature+" is already completed. Reset completed features to morph it again.");
                 if(!morphCalibration.IsCalibrated(selectedFeature))throw new InvalidOperationException("Calibrate "+selectedFeature+" before Auto Morph.");
                 var sensitivity=new Dictionary<string,(double X,double Y)> {
                     [selectedFeature]=((double)morphScaleX.Value,(double)morphScaleY.Value)
@@ -304,6 +310,9 @@ sealed class StudioWindow : Form {
                     try { await morphCalibration.DragAsync(step.Feature,step.Dx,step.Dy,IsSimsWindow); }
                     finally { morphCalibration.Calibrate(step.Feature,relative); }
                     applied++;
+                    completedFeatures.Add(step.Feature);
+                    completedStatus.Text="Completed features: "+string.Join(", ",completedFeatures.OrderBy(x=>x));
+                    lastHoverFeature="";hoverCandidate="";hoverCandidateTicks=0;
                     morphStatus.Text="Applied "+applied+"/"+steps.Count+" features. Review results before another pass.";
                     await System.Threading.Tasks.Task.Delay(250);
                 }
