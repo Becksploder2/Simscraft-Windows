@@ -226,6 +226,83 @@ sealed class StudioWindow : Form {
             finally {if(!analyze.IsDisposed)analyze.Enabled=true;}
         };
         p.Controls.Add(analyze);p.Controls.Add(faceStatus);
+        // Assisted automatic morphing: analyze both images, then apply only calibrated movements.
+        var morphCalibration = new Simcraft.Cas.CasController(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Simcraft Studio","cas-points.json"));
+        var morphFeature = new ComboBox { Width=220, DropDownStyle=ComboBoxStyle.DropDownList };
+        morphFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","cheeks","mouth_lips","chin_jaw","forehead"});
+        morphFeature.SelectedIndex=0;
+        var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
+        var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
+        var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Calibrate feature points and sensitivity before morphing." };
+        var calibrateFeature = new Button { Text="Calibrate Selected Feature (4 seconds)",AutoSize=true };
+        calibrateFeature.Click+=async (_,_)=>{
+            calibrateFeature.Enabled=false;
+            try {
+                morphStatus.Text="Focus Sims 4 and hover over "+morphFeature.Text+"...";
+                await System.Threading.Tasks.Task.Delay(4000);
+                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+                if(game==null||game.MainWindowHandle==IntPtr.Zero||GetForegroundWindow()!=game.MainWindowHandle||!GetCursorPos(out var cursor)||!GetWindowRect(game.MainWindowHandle,out var rect)
+                    ||cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)
+                    throw new InvalidOperationException("Hover inside the foreground Sims 4 window.");
+                morphCalibration.Calibrate(morphFeature.Text,cursor);
+                morphStatus.Text=morphFeature.Text+" calibrated. Repeat for other features.";
+            }catch(Exception ex){morphStatus.Text="Calibration failed: "+ex.Message;}
+            finally{calibrateFeature.Enabled=true;}
+        };
+        var morphCasImage = new TextBox { Width=500,ReadOnly=true };
+        var chooseMorphCas = new Button { Text="Select CAS Face Screenshot",AutoSize=true };
+        chooseMorphCas.Click+=async (_,_)=>{try{morphCasImage.Text=await PickScreenshotAsync()??"";}catch(Exception ex){morphStatus.Text=ex.Message;}};
+        var autoMorph = new Button { Text="Auto Morph Calibrated Features",AutoSize=true };
+        autoMorph.Click+=async (_,_)=>{
+            if(string.IsNullOrEmpty(selectedPhoto)||!File.Exists(morphCasImage.Text)){morphStatus.Text="Import reference photo and select CAS screenshot first.";return;}
+            autoMorph.Enabled=false;
+            string? output=null;
+            try {
+                var root=AppContext.BaseDirectory;
+                var exe=Path.Combine(root,"FaceEngine","BundledAnalyzer","SimcraftFaceAnalyzer.exe");
+                var model=Path.Combine(root,"Models","face_landmarker.task");
+                if(!File.Exists(exe)||!File.Exists(model))throw new FileNotFoundException("Bundled face analyzer or model missing.");
+                output=Path.Combine(Path.GetTempPath(),"simcraft-morph-"+Guid.NewGuid().ToString("N")+".json");
+                using(var proc=new Process { StartInfo=new ProcessStartInfo { FileName=exe,UseShellExecute=false,CreateNoWindow=true } }) {
+                    foreach(var arg in new[]{selectedPhoto,"--cas",morphCasImage.Text,"--model",model,"--output",output})proc.StartInfo.ArgumentList.Add(arg);
+                    proc.Start();
+                    using var timeout=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(120));
+                    try{await proc.WaitForExitAsync(timeout.Token);}catch(OperationCanceledException){proc.Kill(entireProcessTree:true);throw new TimeoutException("Face analysis timed out.");}
+                    if(proc.ExitCode!=0)throw new InvalidOperationException("Face analysis failed.");
+                }
+                var sensitivity=new Dictionary<string,(double X,double Y)>();
+                foreach(string feature in morphFeature.Items)
+                    if(morphCalibration.IsCalibrated(feature))sensitivity[feature]=((double)morphScaleX.Value,(double)morphScaleY.Value);
+                var steps=Simcraft.Cas.FaceMorphPlanner.Plan(await File.ReadAllTextAsync(output),sensitivity);
+                if(steps.Count==0){morphStatus.Text="No calibrated movements needed or available.";return;}
+                var confirmation=MessageBox.Show(this,"Apply "+steps.Count+" calculated CAS drags? Focus Sims 4 within 5 seconds. Use only in CAS Detail Edit. Verify each result.","Confirm assisted morph",MessageBoxButtons.OKCancel);
+                if(confirmation!=DialogResult.OK)return;
+                morphStatus.Text="Focus Sims 4 now...";
+                await System.Threading.Tasks.Task.Delay(5000);
+                bool IsSimsWindow(IntPtr handle) {
+                    foreach(var game in Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))) {
+                        using(game)if(game.MainWindowHandle==handle)return true;
+                    }
+                    return false;
+                }
+                int applied=0;
+                foreach(var step in steps) {
+                    await morphCalibration.DragAsync(step.Feature,step.Dx,step.Dy,IsSimsWindow);
+                    applied++;
+                    morphStatus.Text="Applied "+applied+"/"+steps.Count+" features. Review results before another pass.";
+                    await System.Threading.Tasks.Task.Delay(250);
+                }
+            }catch(Exception ex){morphStatus.Text="Auto morph stopped: "+ex.Message;}
+            finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} autoMorph.Enabled=true;}
+        };
+        Caption(p,"Assisted Auto Face Morph — calibrate each feature in CAS Detail Edit");
+        p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
+        Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
+        p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
+        p.Controls.Add(chooseMorphCas);p.Controls.Add(morphCasImage);p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
+
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
         var templatePreview=new PictureBox { Size=new Size(260,260),SizeMode=PictureBoxSizeMode.Zoom,BorderStyle=BorderStyle.FixedSingle };
