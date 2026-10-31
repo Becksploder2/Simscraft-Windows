@@ -54,6 +54,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if ! gh release view v1.0.11 >/dev/null 2>&1; then
-            gh release create v1.0.11 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simcraft Studio 1.0.11 Windows Portable Update" --notes "Native tabbed workspace and original CAS room background with crash safeguards. Portable ZIP, no installer."
+          if ! gh release view v1.0.12 >/dev/null 2>&1; then
+            gh release create v1.0.12 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simscraft Studio 1.0.12 Windows Portable Update" --notes "Face calibration, automatic CAS screen capture for assisted morphing, and hover-based selection of calibrated facial features. Portable Windows ZIP. Morph automation remains experimental."
           fi
