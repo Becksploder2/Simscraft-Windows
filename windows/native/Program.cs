@@ -136,13 +136,17 @@ sealed class StudioWindow : Form {
             var script=Path.Combine(root,"FaceEngine","analyze_faces.py");
             var model=Path.Combine(root,"Models","face_landmarker.task");
             if(!File.Exists(script)||!File.Exists(model)){
-                faceStatus.Text="Face engine unavailable: bundled MediaPipe model or script missing.";return;
+                faceStatus.Text=!File.Exists(script)?"Face analyzer script missing from this build.":"Face landmark model missing from this build.";return;
+            }
+            if(!File.Exists(Path.Combine(root,"FaceEngine","pythonw.exe"))){
+                faceStatus.Text="Face model found, but the self-contained Python runtime is not bundled yet. Face analysis is unavailable in this build.";
+                return;
             }
             analyze.Enabled=false;faceStatus.Text="Analyzing face...";
             try {
                 var output=Path.Combine(Path.GetTempPath(),"simcraft-face-"+Guid.NewGuid().ToString("N")+".json");
                 using var process=new Process { StartInfo=new ProcessStartInfo {
-                    FileName="pythonw",UseShellExecute=false,CreateNoWindow=true,
+                    FileName=Path.Combine(root,"FaceEngine","pythonw.exe"),UseShellExecute=false,CreateNoWindow=true,
                     RedirectStandardError=true,RedirectStandardOutput=true
                 }};
                 process.StartInfo.ArgumentList.Add(script);
