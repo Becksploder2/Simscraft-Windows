@@ -193,11 +193,11 @@ sealed class StudioWindow : Form {
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Simcraft Studio","cas-points.json"));
         var morphFeature = new ComboBox { Width=220, DropDownStyle=ComboBoxStyle.DropDownList };
-        morphFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","cheeks","mouth_lips","chin_jaw","forehead"});
+        morphFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","mouth_lips","face_shape"});
         morphFeature.SelectedIndex=0;
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
-        var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Auto Morph changes only the selected feature. Calibrate it first." };
+        var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Auto Morph changes only the selected feature. Face Shape combines forehead, cheeks and jaw measurements. Calibrate in Detail Edit." };
         // Hover selection shares the same calibrated points as Auto Morph; no second coordinate store.
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
