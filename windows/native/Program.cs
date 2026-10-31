@@ -128,6 +128,30 @@ sealed class StudioWindow : Form {
             finally {if(!choose.IsDisposed)choose.Enabled=true;}
         };
         p.Controls.Add(choose);p.Controls.Add(importStatus);p.Controls.Add(preview);
+        Caption(p,"Original SmartMorph prototype controls");
+        var resetFrame=new Button { Text="Reset framing",AutoSize=true };
+        resetFrame.Click+=(_,_)=>{preview.SizeMode=PictureBoxSizeMode.Zoom;importStatus.Text="Preview framing reset.";};
+        var autoFrame=new Button { Text="Auto-frame face (when supported)",AutoSize=true };
+        autoFrame.Click+=(_,_)=>importStatus.Text="Automatic face framing requires the face engine; original image unchanged.";
+        var saveView=new Button { Text="Save current view PNG",AutoSize=true };
+        saveView.Click+=async (_,_)=>{
+            if(preview.Image==null){importStatus.Text="Import a photo first.";return;}
+            using var picker=new SaveFileDialog { Filter="PNG image|*.png",FileName="Simcraft-Face-Preview.png" };
+            if(picker.ShowDialog()!=DialogResult.OK)return;
+            try {using var snapshot=new Bitmap(preview.Image);await System.Threading.Tasks.Task.Run(()=>snapshot.Save(picker.FileName,System.Drawing.Imaging.ImageFormat.Png));importStatus.Text="Preview PNG saved.";}
+            catch(Exception ex){importStatus.Text="Save failed: "+ex.Message;}
+        };
+        var preparePlan=new Button { Text="Prepare SmartMorph plan",AutoSize=true };
+        preparePlan.Click+=(_,_)=>importStatus.Text=selectedPhoto==null?"Import a reference photo first.":"SmartMorph plan ready to export (manual template selection).";
+        var exportFacePlan=new Button { Text="Export editable plan JSON",AutoSize=true };
+        exportFacePlan.Click+=(_,_)=>{
+            if(selectedPhoto==null){importStatus.Text="Import a reference photo first.";return;}
+            using var picker=new SaveFileDialog { Filter="JSON file|*.json",FileName="SmartMorph-plan.json" };
+            if(picker.ShowDialog()!=DialogResult.OK)return;
+            try {File.WriteAllText(picker.FileName,JsonSerializer.Serialize(new {format="simcraft-smartmorph-plan",referencePhoto=selectedPhoto,automaticMorphing=false},new JsonSerializerOptions {WriteIndented=true}));importStatus.Text="Editable plan exported.";}
+            catch(Exception ex){importStatus.Text="Export failed: "+ex.Message;}
+        };
+        foreach(var control in new Control[]{resetFrame,autoFrame,saveView,preparePlan,exportFacePlan})p.Controls.Add(control);
         var faceStatus=new Label { Text="Face recognition: no photo analyzed",AutoSize=true,ForeColor=Color.White };
         var analyze=new Button { Text="Analyze face landmarks",AutoSize=true };
         analyze.Click+=async (_,_)=>{
