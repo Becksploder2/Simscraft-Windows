@@ -135,53 +135,7 @@ sealed class StudioWindow : Form {
         Caption(p,"SIM MORPH STUDIO — ORIGINAL CONTROLS");
         var refreshPreview=new Button { Text="Refresh Preview",AutoSize=true };
         refreshPreview.Click+=(_,_)=>{preview.Invalidate();importStatus.Text="Preview refreshed.";};
-        // One-click testing is deliberately tied to the selected feature, not a stale global point.
-        var clickPoints=new Dictionary<string,Point>(StringComparer.OrdinalIgnoreCase);
-        var clickFeature=new ComboBox { Width=220,DropDownStyle=ComboBoxStyle.DropDownList };
-        clickFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","cheeks","mouth_lips","chin_jaw","forehead"});
-        clickFeature.SelectedIndex=0;
-        var setClick=new Button { Text="Set CAS Click Point",AutoSize=true };
-        setClick.Click+=async (_,_)=>{
-            setClick.Enabled=false;
-            var feature=clickFeature.Text;
-            importStatus.Text="Focus Sims 4 and hover over "+feature+". Capturing point in 4 seconds...";
-            try {
-                await System.Threading.Tasks.Task.Delay(4000);
-                using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
-                if(game==null||game.MainWindowHandle==IntPtr.Zero||!GetWindowRect(game.MainWindowHandle,out var rect)||!GetCursorPos(out var cursor))
-                    throw new InvalidOperationException("Sims 4 window or cursor unavailable.");
-                if(cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)
-                    throw new InvalidOperationException("Hover inside the foreground Sims 4 window during calibration.");
-                clickPoints[feature]=new Point(cursor.X-rect.Left,cursor.Y-rect.Top);
-                importStatus.Text=feature+" click point calibrated. Select the same feature and Apply One CAS Click to test.";
-            }catch(Exception ex){importStatus.Text="Calibration failed: "+ex.Message;}
-            finally{setClick.Enabled=true;}
-        };
-        var applyClick=new Button { Text="Apply One CAS Click",AutoSize=true };
-        applyClick.Click+=async (_,_)=>{
-            var feature=clickFeature.Text;
-            if(!clickPoints.TryGetValue(feature,out var point)){importStatus.Text="Calibrate "+feature+" first. Other feature points are not reused.";return;}
-            applyClick.Enabled=false;
-            importStatus.Text="Focus Sims 4. Testing "+feature+" in 4 seconds...";
-            try {
-                await System.Threading.Tasks.Task.Delay(4000);
-                using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
-                if(game==null||game.MainWindowHandle==IntPtr.Zero||!GetWindowRect(game.MainWindowHandle,out var rect))
-                    throw new InvalidOperationException("Sims 4 must be the foreground window.");
-                if(point.X<0||point.Y<0||point.X>=rect.Right-rect.Left||point.Y>=rect.Bottom-rect.Top)
-                    throw new InvalidOperationException("Calibrated point is outside the current game window. Recalibrate.");
-                if(!SetCursorPos(rect.Left+point.X,rect.Top+point.Y))throw new InvalidOperationException("Cannot move cursor.");
-                await System.Threading.Tasks.Task.Delay(120);
-                mouse_event(0x0002,0,0,0,UIntPtr.Zero);
-                await System.Threading.Tasks.Task.Delay(90);
-                mouse_event(0x0004,0,0,0,UIntPtr.Zero);
-                importStatus.Text=feature+" click sent. A click alone selects a region; it does not morph it. Use calibrated drags for shape changes.";
-            }catch(Exception ex){importStatus.Text="CAS click canceled: "+ex.Message;}
-            finally{applyClick.Enabled=true;}
-        };
-        Caption(p,"One-Click CAS — select and calibrate each facial feature independently");
-        p.Controls.Add(clickFeature);
-        p.Controls.Add(refreshPreview);p.Controls.Add(setClick);p.Controls.Add(applyClick);
+        p.Controls.Add(refreshPreview);
         var faceStatus=new Label { Text="Face recognition: no photo analyzed",AutoSize=true,ForeColor=Color.White };
         var analyze=new Button { Text="Analyze Faces",AutoSize=true };
         analyze.Click+=async (_,_)=>{
@@ -259,30 +213,28 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){morphStatus.Text="Calibration failed: "+ex.Message;}
             finally{calibrateFeature.Enabled=true;}
         };
-        var morphCasImage = new TextBox { Width=500,ReadOnly=true };
-        var chooseMorphCas = new Button { Text="Optional: Select CAS Screenshot",AutoSize=true };
-        chooseMorphCas.Click+=async (_,_)=>{try{morphCasImage.Text=await PickScreenshotAsync()??"";}catch(Exception ex){morphStatus.Text=ex.Message;}};
         var autoMorph = new Button { Text="Auto Morph Calibrated Features",AutoSize=true };
         autoMorph.Click+=async (_,_)=>{
             if(string.IsNullOrEmpty(selectedPhoto)){morphStatus.Text="Import a reference photograph first.";return;}
             autoMorph.Enabled=false;
             string? output=null;
+            string? capturedPath=null;
             try {
                 var root=AppContext.BaseDirectory;
                 var exe=Path.Combine(root,"FaceEngine","BundledAnalyzer","SimcraftFaceAnalyzer.exe");
                 var model=Path.Combine(root,"Models","face_landmarker.task");
                 if(!File.Exists(exe)||!File.Exists(model))throw new FileNotFoundException("Bundled face analyzer or model missing.");
-                if(string.IsNullOrWhiteSpace(morphCasImage.Text)||!File.Exists(morphCasImage.Text)) {
-                    morphStatus.Text="Capturing Sims 4 face directly. Keep the game visible and unobstructed...";
-                    await System.Threading.Tasks.Task.Delay(4000);
-                    using var liveCapture=CaptureSimsWindow();
-                    var capturedPath=Path.Combine(Path.GetTempPath(),"simcraft-cas-live-"+Guid.NewGuid().ToString("N")+".png");
-                    liveCapture.Save(capturedPath,System.Drawing.Imaging.ImageFormat.Png);
-                    morphCasImage.Text=capturedPath;
-                }
+                // Capture directly from the running game; no user-supplied CAS image is required.
+                morphStatus.Text="Focus The Sims 4 in CAS. Capturing the current face in 4 seconds...";
+                await System.Threading.Tasks.Task.Delay(4000);
+                using var activeCaptureGame=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
+                if(activeCaptureGame==null)throw new InvalidOperationException("Focus the visible Sims 4 CAS window before capture.");
+                using var liveCapture=CaptureSimsWindow();
+                capturedPath=Path.Combine(Path.GetTempPath(),"simcraft-cas-live-"+Guid.NewGuid().ToString("N")+".png");
+                liveCapture.Save(capturedPath,System.Drawing.Imaging.ImageFormat.Png);
                 output=Path.Combine(Path.GetTempPath(),"simcraft-morph-"+Guid.NewGuid().ToString("N")+".json");
                 using(var proc=new Process { StartInfo=new ProcessStartInfo { FileName=exe,UseShellExecute=false,CreateNoWindow=true } }) {
-                    foreach(var arg in new[]{selectedPhoto,"--cas",morphCasImage.Text,"--model",model,"--output",output})proc.StartInfo.ArgumentList.Add(arg);
+                    foreach(var arg in new[]{selectedPhoto,"--cas",capturedPath,"--model",model,"--output",output})proc.StartInfo.ArgumentList.Add(arg);
                     proc.Start();
                     using var timeout=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(120));
                     try{await proc.WaitForExitAsync(timeout.Token);}catch(OperationCanceledException){proc.Kill(entireProcessTree:true);throw new TimeoutException("Face analysis timed out.");}
@@ -316,15 +268,13 @@ sealed class StudioWindow : Form {
                     await System.Threading.Tasks.Task.Delay(250);
                 }
             }catch(Exception ex){morphStatus.Text="Auto morph stopped: "+ex.Message;}
-            finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} autoMorph.Enabled=true;}
+            finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;}
         };
         Caption(p,"Assisted Auto Face Morph — calibrate each feature in CAS Detail Edit");
         p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
-        var useLiveCas=new Button { Text="Use Live Sims 4 Screen",AutoSize=true };
-        useLiveCas.Click+=(_,_)=>{morphCasImage.Text="";morphStatus.Text="Live CAS capture enabled. Start Auto Morph and focus The Sims 4 when prompted.";};
-        p.Controls.Add(useLiveCas);p.Controls.Add(chooseMorphCas);p.Controls.Add(morphCasImage);p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
+        p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
 
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
