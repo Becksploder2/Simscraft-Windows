@@ -75,7 +75,7 @@ sealed class StudioWindow : Form {
         var template=new ComboBox { Width=240, DropDownStyle=ComboBoxStyle.DropDownList };
         void Fill() { template.Items.Clear(); for(int i=1;i<=19;i++) template.Items.Add((gender.SelectedIndex==0?"F":"M")+i); template.SelectedIndex=0; }
         gender.SelectedIndexChanged+=(_,_)=>Fill(); Fill();
-        var choose=new Button { Text="Import reference photo", AutoSize=true };
+        var choose=new Button { Text="Browse for Photo", AutoSize=true };
         var importStatus=new Label { Text="Ready to import a reference photo",AutoSize=true,ForeColor=Color.White };
         choose.Click+=async (_,_)=>{
             choose.Enabled=false;
@@ -128,32 +128,16 @@ sealed class StudioWindow : Form {
             finally {if(!choose.IsDisposed)choose.Enabled=true;}
         };
         p.Controls.Add(choose);p.Controls.Add(importStatus);p.Controls.Add(preview);
-        Caption(p,"Original SmartMorph prototype controls");
-        var resetFrame=new Button { Text="Reset framing",AutoSize=true };
-        resetFrame.Click+=(_,_)=>{preview.SizeMode=PictureBoxSizeMode.Zoom;importStatus.Text="Preview framing reset.";};
-        var autoFrame=new Button { Text="Auto-frame face (when supported)",AutoSize=true };
-        autoFrame.Click+=(_,_)=>importStatus.Text="Automatic face framing requires the face engine; original image unchanged.";
-        var saveView=new Button { Text="Save current view PNG",AutoSize=true };
-        saveView.Click+=async (_,_)=>{
-            if(preview.Image==null){importStatus.Text="Import a photo first.";return;}
-            using var picker=new SaveFileDialog { Filter="PNG image|*.png",FileName="Simcraft-Face-Preview.png" };
-            if(picker.ShowDialog()!=DialogResult.OK)return;
-            try {using var snapshot=new Bitmap(preview.Image);await System.Threading.Tasks.Task.Run(()=>snapshot.Save(picker.FileName,System.Drawing.Imaging.ImageFormat.Png));importStatus.Text="Preview PNG saved.";}
-            catch(Exception ex){importStatus.Text="Save failed: "+ex.Message;}
-        };
-        var preparePlan=new Button { Text="Prepare SmartMorph plan",AutoSize=true };
-        preparePlan.Click+=(_,_)=>importStatus.Text=selectedPhoto==null?"Import a reference photo first.":"SmartMorph plan ready to export (manual template selection).";
-        var exportFacePlan=new Button { Text="Export editable plan JSON",AutoSize=true };
-        exportFacePlan.Click+=(_,_)=>{
-            if(selectedPhoto==null){importStatus.Text="Import a reference photo first.";return;}
-            using var picker=new SaveFileDialog { Filter="JSON file|*.json",FileName="SmartMorph-plan.json" };
-            if(picker.ShowDialog()!=DialogResult.OK)return;
-            try {File.WriteAllText(picker.FileName,JsonSerializer.Serialize(new {format="simcraft-smartmorph-plan",referencePhoto=selectedPhoto,automaticMorphing=false},new JsonSerializerOptions {WriteIndented=true}));importStatus.Text="Editable plan exported.";}
-            catch(Exception ex){importStatus.Text="Export failed: "+ex.Message;}
-        };
-        foreach(var control in new Control[]{resetFrame,autoFrame,saveView,preparePlan,exportFacePlan})p.Controls.Add(control);
+        Caption(p,"SIM MORPH STUDIO — ORIGINAL CONTROLS");
+        var refreshPreview=new Button { Text="Refresh Preview",AutoSize=true };
+        refreshPreview.Click+=(_,_)=>{preview.Invalidate();importStatus.Text="Preview refreshed.";};
+        var setClick=new Button { Text="Set CAS Click Point",AutoSize=true };
+        setClick.Click+=(_,_)=>importStatus.Text="CAS click calibration requires an active game connection; no click sent.";
+        var applyClick=new Button { Text="Apply One CAS Click",AutoSize=true };
+        applyClick.Click+=(_,_)=>importStatus.Text="No CAS click sent: calibration and game control are not available.";
+        p.Controls.Add(refreshPreview);p.Controls.Add(setClick);p.Controls.Add(applyClick);
         var faceStatus=new Label { Text="Face recognition: no photo analyzed",AutoSize=true,ForeColor=Color.White };
-        var analyze=new Button { Text="Analyze face landmarks",AutoSize=true };
+        var analyze=new Button { Text="Analyze Faces",AutoSize=true };
         analyze.Click+=async (_,_)=>{
             if(string.IsNullOrEmpty(selectedPhoto)){faceStatus.Text="Import a photo first.";return;}
             var root=AppContext.BaseDirectory;
@@ -214,7 +198,7 @@ sealed class StudioWindow : Form {
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{try{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();}catch(Exception ex){casStatus.Text="Detection unavailable: "+ex.Message;}};
-        var importCasShot=new Button { Text="Import CAS screenshot",AutoSize=true };
+        var importCasShot=new Button { Text="Capture Current CAS Face",AutoSize=true };
         importCasShot.Click+=async (_,_)=>{
             importCasShot.Enabled=false;
             casStatus.Text="Opening screenshot picker...";
