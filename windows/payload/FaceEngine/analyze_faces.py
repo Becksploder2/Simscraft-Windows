@@ -54,11 +54,42 @@ def main():
  ap=argparse.ArgumentParser();ap.add_argument('photo',type=Path)
  ap.add_argument('--cas',type=Path)
  ap.add_argument('--model',type=Path,default=Path(__file__).resolve().parent.parent/'Models'/'face_landmarker.task')
+ ap.add_argument('--templates',type=Path)
+ ap.add_argument('--gender',choices=['F','M'],default='F')
  ap.add_argument('--output',type=Path,default=Path('face_analysis.json'))
  args=ap.parse_args()
  if not args.model.is_file():raise FileNotFoundError('Model missing: '+str(args.model))
  if not args.photo.is_file():raise FileNotFoundError('Photo missing: '+str(args.photo))
- data={'version':'4.3','reference':analyze(args.model,args.photo)}
+ data={'version':'4.4','reference':analyze(args.model,args.photo)}
+ if args.templates is not None and data['reference']['face_count']>0:
+  import math
+  reference=data['reference']['faces'][0]['landmarks']
+  # Compare scale-normalized geometry. Similarity is an estimate, not proof
+  # of the actual CAS preset; game-provided template IDs are unavailable.
+  indices=[33,133,362,263,1,4,61,291,13,14,152,10,234,454,168,197,70,300]
+  def descriptor(points):
+   x1,y1=points[33]['x'],points[33]['y']
+   x2,y2=points[263]['x'],points[263]['y']
+   scale=max(0.00001,math.hypot(x2-x1,y2-y1))
+   cx=(x1+x2)/2;cy=(y1+y2)/2
+   return [(points[i]['x']-cx)/scale for i in indices]+[(points[i]['y']-cy)/scale for i in indices]
+  ref=descriptor(reference)
+  matches=[]
+  folder=args.templates/('Female' if args.gender=='F' else 'Male')
+  for n in range(1,20):
+   path=folder/f'{args.gender}{n}.png'
+   if not path.is_file():continue
+   try:
+    found=analyze(args.model,path)
+    if found['face_count']==0:continue
+    vec=descriptor(found['faces'][0]['landmarks'])
+    score=sum((x-y)**2 for x,y in zip(ref,vec))/len(ref)
+    matches.append({'template':f'{args.gender}{n}','distance':round(score,6)})
+   except Exception:continue
+  matches.sort(key=lambda x:x['distance'])
+  data['template_matches']=matches[:5]
+  data['template_matching_note']='Image-based geometric estimate; not a verified CAS template ID'
+
  if args.cas is not None:
   if not args.cas.is_file():raise FileNotFoundError('CAS screenshot missing: '+str(args.cas))
   data['cas']=analyze(args.model,args.cas)
