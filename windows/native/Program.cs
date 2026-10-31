@@ -201,7 +201,9 @@ sealed class StudioWindow : Form {
              catch(Exception ex){casStatus.Text="Screenshot selection failed: "+ex.Message;}
             finally{importCasShot.Enabled=true;}
         };
-        p.Controls.Add(detect);p.Controls.Add(importCasShot);p.Controls.Add(casStatus);
+        var casDrop=new Label { Text="Or drop a CAS screenshot here (no file picker)",AutoSize=false,Width=570,Height=50,BorderStyle=BorderStyle.FixedSingle,TextAlign=ContentAlignment.MiddleCenter,ForeColor=Color.White };
+        EnableScreenshotDrop(casDrop,file=>casStatus.Text="CAS screenshot selected: "+Path.GetFileName(file)+". Mode not verified.");
+        p.Controls.Add(detect);p.Controls.Add(importCasShot);p.Controls.Add(casDrop);p.Controls.Add(casStatus);
         var casMonitor=new System.Windows.Forms.Timer { Interval=2500 };
         casMonitor.Tick+=(_,_)=>{
             try {
@@ -278,6 +280,17 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(import);p.Controls.Add(status);p.Controls.Add(report);
         Caption(p,"Use existing packages for research. Do not redistribute third-party assets without permission.");
+    }
+    static void EnableScreenshotDrop(Control target, Action<string> received) {
+        target.AllowDrop=true;
+        target.DragEnter+=(_,e)=>{
+            if(e.Data?.GetDataPresent(DataFormats.FileDrop)==true)e.Effect=DragDropEffects.Copy;
+        };
+        target.DragDrop+=(_,e)=>{
+            if(e.Data?.GetData(DataFormats.FileDrop) is string[] files && files.Length>0 &&
+               new[]{".png",".jpg",".jpeg"}.Contains(Path.GetExtension(files[0]).ToLowerInvariant()))
+                received(files[0]);
+        };
     }
     static async System.Threading.Tasks.Task<string?> PickScreenshotAsync() {
         var completion=new System.Threading.Tasks.TaskCompletionSource<string?>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
@@ -387,7 +400,19 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
             finally{calibrate.Enabled=true;verify.Enabled=true;}
         };
-        p.Controls.Add(calibrate);p.Controls.Add(verify);
+        var buildDrop=new Label { Text="Or drop Build/Buy reference screenshot here (no file picker)",AutoSize=false,Width=570,Height=50,BorderStyle=BorderStyle.FixedSingle,TextAlign=ContentAlignment.MiddleCenter,ForeColor=Color.White };
+        EnableScreenshotDrop(buildDrop,file=>{
+            status.Text="Importing dropped reference...";
+            _=System.Threading.Tasks.Task.Run(()=>{
+                using var image=new Bitmap(file);
+                if(image.Width>8192||image.Height>8192||((long)image.Width*image.Height)>30_000_000)throw new InvalidDataException("Image too large.");
+                Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
+                image.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
+            }).ContinueWith(t=>{
+                if(!status.IsDisposed)status.Text=t.IsFaulted?"Reference import failed: "+t.Exception?.GetBaseException().Message:"Build/Buy reference imported.";
+            },System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+        });
+        p.Controls.Add(calibrate);p.Controls.Add(buildDrop);p.Controls.Add(verify);
         Caption(p,"Construction controller — safety-first preview");
         var constructionState=new Label { Text="Idle. No game input authorized.",AutoSize=true,ForeColor=Color.White };
         var allowControl=new CheckBox { Text="I approve Buildcraft controlling The Sims 4 after verification",AutoSize=true,ForeColor=Color.White };
