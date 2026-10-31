@@ -198,13 +198,13 @@ sealed class StudioWindow : Form {
         var completedFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var completedStatus = new Label { Text="Completed features: none",AutoSize=true,ForeColor=Color.White };
         var resetCompleted = new Button { Text="Reset Completed Features (New Sim)",AutoSize=true };
-        resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";hoverStatus.Text="All features available again.";};
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Auto Morph changes only the selected feature. Calibrate each facial region independently in Detail Edit." };
         // Hover selection shares the same calibrated points as Auto Morph; no second coordinate store.
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
+        resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";hoverStatus.Text="All features available again.";};
         var hoverTimer = new System.Windows.Forms.Timer { Interval=75 };
         string lastHoverFeature="";
         string hoverCandidate="";
@@ -323,7 +323,7 @@ sealed class StudioWindow : Form {
         p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
-        p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
+        p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);p.Controls.Add(completedStatus);p.Controls.Add(resetCompleted);
 
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
