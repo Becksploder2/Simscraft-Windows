@@ -246,7 +246,7 @@ sealed class StudioWindow : Form {
                 if(game==null||game.MainWindowHandle==IntPtr.Zero||GetForegroundWindow()!=game.MainWindowHandle||!GetCursorPos(out var cursor)||!GetWindowRect(game.MainWindowHandle,out var rect)
                     ||cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)
                     throw new InvalidOperationException("Hover inside the foreground Sims 4 window.");
-                morphCalibration.Calibrate(morphFeature.Text,cursor);
+                morphCalibration.Calibrate(morphFeature.Text,new Point(cursor.X-rect.Left,cursor.Y-rect.Top));
                 morphStatus.Text=morphFeature.Text+" calibrated. Repeat for other features.";
             }catch(Exception ex){morphStatus.Text="Calibration failed: "+ex.Message;}
             finally{calibrateFeature.Enabled=true;}
@@ -289,7 +289,12 @@ sealed class StudioWindow : Form {
                 }
                 int applied=0;
                 foreach(var step in steps) {
-                    await morphCalibration.DragAsync(step.Feature,step.Dx,step.Dy,IsSimsWindow);
+                    using var activeGame=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
+                    if(activeGame==null||!GetWindowRect(activeGame.MainWindowHandle,out var bounds))throw new InvalidOperationException("Sims 4 is not the foreground window.");
+                    if(!morphCalibration.TryGetPoint(step.Feature,out var relative))throw new InvalidOperationException("Feature is not calibrated: "+step.Feature);
+                    morphCalibration.Calibrate(step.Feature,new Point(bounds.Left+relative.X,bounds.Top+relative.Y));
+                    try { await morphCalibration.DragAsync(step.Feature,step.Dx,step.Dy,IsSimsWindow); }
+                    finally { morphCalibration.Calibrate(step.Feature,relative); }
                     applied++;
                     morphStatus.Text="Applied "+applied+"/"+steps.Count+" features. Review results before another pass.";
                     await System.Threading.Tasks.Task.Delay(250);
