@@ -260,11 +260,11 @@ sealed class StudioWindow : Form {
             finally{calibrateFeature.Enabled=true;}
         };
         var morphCasImage = new TextBox { Width=500,ReadOnly=true };
-        var chooseMorphCas = new Button { Text="Select CAS Face Screenshot",AutoSize=true };
+        var chooseMorphCas = new Button { Text="Optional: Select CAS Screenshot",AutoSize=true };
         chooseMorphCas.Click+=async (_,_)=>{try{morphCasImage.Text=await PickScreenshotAsync()??"";}catch(Exception ex){morphStatus.Text=ex.Message;}};
         var autoMorph = new Button { Text="Auto Morph Calibrated Features",AutoSize=true };
         autoMorph.Click+=async (_,_)=>{
-            if(string.IsNullOrEmpty(selectedPhoto)||!File.Exists(morphCasImage.Text)){morphStatus.Text="Import reference photo and select CAS screenshot first.";return;}
+            if(string.IsNullOrEmpty(selectedPhoto)){morphStatus.Text="Import a reference photograph first.";return;}
             autoMorph.Enabled=false;
             string? output=null;
             try {
@@ -272,6 +272,14 @@ sealed class StudioWindow : Form {
                 var exe=Path.Combine(root,"FaceEngine","BundledAnalyzer","SimcraftFaceAnalyzer.exe");
                 var model=Path.Combine(root,"Models","face_landmarker.task");
                 if(!File.Exists(exe)||!File.Exists(model))throw new FileNotFoundException("Bundled face analyzer or model missing.");
+                if(string.IsNullOrWhiteSpace(morphCasImage.Text)||!File.Exists(morphCasImage.Text)) {
+                    morphStatus.Text="Capturing Sims 4 face directly. Keep the game visible and unobstructed...";
+                    await System.Threading.Tasks.Task.Delay(4000);
+                    using var liveCapture=CaptureSimsWindow();
+                    var capturedPath=Path.Combine(Path.GetTempPath(),"simcraft-cas-live-"+Guid.NewGuid().ToString("N")+".png");
+                    liveCapture.Save(capturedPath,System.Drawing.Imaging.ImageFormat.Png);
+                    morphCasImage.Text=capturedPath;
+                }
                 output=Path.Combine(Path.GetTempPath(),"simcraft-morph-"+Guid.NewGuid().ToString("N")+".json");
                 using(var proc=new Process { StartInfo=new ProcessStartInfo { FileName=exe,UseShellExecute=false,CreateNoWindow=true } }) {
                     foreach(var arg in new[]{selectedPhoto,"--cas",morphCasImage.Text,"--model",model,"--output",output})proc.StartInfo.ArgumentList.Add(arg);
@@ -314,7 +322,9 @@ sealed class StudioWindow : Form {
         p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
-        p.Controls.Add(chooseMorphCas);p.Controls.Add(morphCasImage);p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
+        var useLiveCas=new Button { Text="Use Live Sims 4 Screen",AutoSize=true };
+        useLiveCas.Click+=(_,_)=>{morphCasImage.Text="";morphStatus.Text="Live CAS capture enabled. Start Auto Morph and focus The Sims 4 when prompted.";};
+        p.Controls.Add(useLiveCas);p.Controls.Add(chooseMorphCas);p.Controls.Add(morphCasImage);p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
 
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
