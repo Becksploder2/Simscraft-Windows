@@ -43,23 +43,21 @@ public sealed class CasController {
         if (Math.Abs(dx)>180 || Math.Abs(dy)>180) throw new ArgumentOutOfRangeException(nameof(dx),"Single drag exceeds safety limit.");
         var target=GetForegroundWindow();
         if(target==IntPtr.Zero || !isSimsWindow(target)) throw new InvalidOperationException("Focus The Sims 4 before applying a morph.");
-        GetCursorPos(out var original);
         bool pressed=false;
         try {
             cancellationToken.ThrowIfCancellationRequested();
-            SetCursorPos(p.X,p.Y);
+            if(!SetCursorPos(p.X,p.Y)) throw new InvalidOperationException("Could not position cursor on the calibrated feature.");
             await Task.Delay(90,cancellationToken);
             if(GetForegroundWindow()!=target) throw new InvalidOperationException("CAS focus changed.");
             mouse_event(LEFTDOWN,0,0,0,UIntPtr.Zero); pressed=true;
             for(int i=1;i<=12;i++) {
                 cancellationToken.ThrowIfCancellationRequested();
                 if(GetForegroundWindow()!=target) throw new InvalidOperationException("CAS focus changed.");
-                SetCursorPos(p.X+(int)Math.Round(dx*i/12.0),p.Y+(int)Math.Round(dy*i/12.0));
+                if(!SetCursorPos(p.X+(int)Math.Round(dx*i/12.0),p.Y+(int)Math.Round(dy*i/12.0))) throw new InvalidOperationException("Cursor movement failed.");
                 await Task.Delay(18,cancellationToken);
             }
         } finally {
             if(pressed) mouse_event(LEFTUP,0,0,0,UIntPtr.Zero);
-            SetCursorPos(original.X,original.Y);
         }
     }
 }
