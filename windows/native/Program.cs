@@ -200,9 +200,11 @@ sealed class StudioWindow : Form {
         var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Auto Morph changes only the selected feature. Calibrate it first." };
         // Hover selection shares the same calibrated points as Auto Morph; no second coordinate store.
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
-        var hoverStatus = new Label { Text="Hover detection uses calibrated facial points; uncalibrated regions need manual selection.",AutoSize=true,ForeColor=Color.White };
-        var hoverTimer = new System.Windows.Forms.Timer { Interval=180 };
+        var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
+        var hoverTimer = new System.Windows.Forms.Timer { Interval=75 };
         string lastHoverFeature="";
+        string hoverCandidate="";
+        int hoverCandidateTicks=0;
         hoverTimer.Tick+=(_,_)=>{
             if(!hoverSelection.Checked || !GetCursorPos(out var cursor))return;
             using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
@@ -216,13 +218,19 @@ sealed class StudioWindow : Form {
                 if(distance<nearestDistance){nearestDistance=distance;nearest=item.Key;}
             }
             // Never select a distant facial region, e.g. hair when hovering over lips.
-            if(nearest==null||nearestDistance>55*55||nearest==lastHoverFeature)return;
+            if(nearest==null||nearestDistance>95*95) {
+                hoverCandidate="";hoverCandidateTicks=0;return;
+            }
+            if(nearest==lastHoverFeature)return;
+            if(nearest!=hoverCandidate){hoverCandidate=nearest;hoverCandidateTicks=1;return;}
+            if(++hoverCandidateTicks<2)return;
             int index=morphFeature.FindStringExact(nearest);
             if(index<0)return;
             morphFeature.SelectedIndex=index;
             lastHoverFeature=nearest;
             hoverStatus.Text="Hover selected: "+nearest;
         };
+        morphFeature.SelectedIndexChanged+=(_,_)=>{lastHoverFeature=morphFeature.SelectedItem?.ToString()??"";};
         hoverSelection.CheckedChanged+=(_,_)=>{if(hoverSelection.Checked)hoverTimer.Start();else hoverTimer.Stop();};
         hoverTimer.Start();
         p.Disposed+=(_,_)=>{hoverTimer.Stop();hoverTimer.Dispose();};
