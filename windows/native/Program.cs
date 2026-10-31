@@ -660,6 +660,7 @@ sealed class StudioWindow : Form {
         Caption(p,"Export and import of mod and outfit plans are available in their respective tabs.");
         Caption(p,"Photo previews and manual F1–F19 / M1–M19 selection are available in Character Studio.");
         Caption(p,"The original HTML workspace is not used by this native interface.");
+        Caption(p,"Installed version: v"+CurrentVersion+" | Windows EXE file version: "+(System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()??"unknown"));
         var updateStatus=new Label { Text="Update status: not checked",AutoSize=true,ForeColor=Color.White };
         var check=new Button { Text="Check for updates",AutoSize=true };
         check.Click+=async (_,_)=>await CheckForUpdates(updateStatus);
