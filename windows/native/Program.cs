@@ -197,7 +197,7 @@ sealed class StudioWindow : Form {
         morphFeature.SelectedIndex=0;
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
-        var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Calibrate feature points and sensitivity before morphing." };
+        var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Auto Morph changes only the selected feature. Calibrate it first." };
         // Hover selection shares the same calibrated points as Auto Morph; no second coordinate store.
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover detection uses calibrated facial points; uncalibrated regions need manual selection.",AutoSize=true,ForeColor=Color.White };
@@ -241,7 +241,7 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){morphStatus.Text="Calibration failed: "+ex.Message;}
             finally{calibrateFeature.Enabled=true;}
         };
-        var autoMorph = new Button { Text="Auto Morph Calibrated Features",AutoSize=true };
+        var autoMorph = new Button { Text="Auto Morph Selected Feature",AutoSize=true };
         autoMorph.Click+=async (_,_)=>{
             if(string.IsNullOrEmpty(selectedPhoto)){morphStatus.Text="Import a reference photograph first.";return;}
             autoMorph.Enabled=false;
@@ -268,11 +268,15 @@ sealed class StudioWindow : Form {
                     try{await proc.WaitForExitAsync(timeout.Token);}catch(OperationCanceledException){proc.Kill(entireProcessTree:true);throw new TimeoutException("Face analysis timed out.");}
                     if(proc.ExitCode!=0)throw new InvalidOperationException("Face analysis failed.");
                 }
-                var sensitivity=new Dictionary<string,(double X,double Y)>();
-                foreach(string feature in morphFeature.Items)
-                    if(morphCalibration.IsCalibrated(feature))sensitivity[feature]=((double)morphScaleX.Value,(double)morphScaleY.Value);
+                // Auto Morph acts only on the selected/hovered feature, never on the whole face.
+                var selectedFeature=morphFeature.SelectedItem?.ToString();
+                if(string.IsNullOrWhiteSpace(selectedFeature))throw new InvalidOperationException("Select a facial feature first.");
+                if(!morphCalibration.IsCalibrated(selectedFeature))throw new InvalidOperationException("Calibrate "+selectedFeature+" before Auto Morph.");
+                var sensitivity=new Dictionary<string,(double X,double Y)> {
+                    [selectedFeature]=((double)morphScaleX.Value,(double)morphScaleY.Value)
+                };
                 var steps=Simcraft.Cas.FaceMorphPlanner.Plan(await File.ReadAllTextAsync(output),sensitivity);
-                if(steps.Count==0){morphStatus.Text="No calibrated movements needed or available.";return;}
+                if(steps.Count==0){morphStatus.Text="No movement calculated for "+selectedFeature+".";return;}
                 var confirmation=MessageBox.Show(this,"Apply "+steps.Count+" calculated CAS drags? Focus Sims 4 within 5 seconds. Use only in CAS Detail Edit. Verify each result.","Confirm assisted morph",MessageBoxButtons.OKCancel);
                 if(confirmation!=DialogResult.OK)return;
                 morphStatus.Text="Focus Sims 4 now...";
@@ -298,7 +302,7 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){morphStatus.Text="Auto morph stopped: "+ex.Message;}
             finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;}
         };
-        Caption(p,"Assisted Auto Face Morph — calibrate each feature in CAS Detail Edit");
+        Caption(p,"Assisted Auto Face Morph — only the selected facial feature is adjusted");
         p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
