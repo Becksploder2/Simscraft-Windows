@@ -201,14 +201,26 @@ sealed class StudioWindow : Form {
                 process.StartInfo.ArgumentList.Add(model);
                 process.StartInfo.ArgumentList.Add("--output");
                 process.StartInfo.ArgumentList.Add(output);
+                process.StartInfo.ArgumentList.Add("--templates");
+                process.StartInfo.ArgumentList.Add(Path.Combine(root,"Templates"));
+                process.StartInfo.ArgumentList.Add("--gender");
+                process.StartInfo.ArgumentList.Add(gender.SelectedIndex==0?"F":"M");
                 process.Start();
-                using var cancel=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20));
+                using var cancel=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(120));
                 try { await process.WaitForExitAsync(cancel.Token); }
                 catch(OperationCanceledException){process.Kill(entireProcessTree:true);faceStatus.Text="Face analysis timed out.";return;}
                 if(process.ExitCode!=0||!File.Exists(output)){faceStatus.Text="Face analysis failed. Check the MediaPipe runtime.";return;}
                 using var data=JsonDocument.Parse(await File.ReadAllTextAsync(output));
                 int count=data.RootElement.GetProperty("reference").GetProperty("face_count").GetInt32();
-                faceStatus.Text=count>0?"Face recognized; landmarks extracted. Automatic CAS template matching is not yet available.":"No face detected. Try a clear frontal photo.";
+                if(count>0 && data.RootElement.TryGetProperty("template_matches",out var matches) && matches.GetArrayLength()>0){
+                    var best=matches[0].GetProperty("template").GetString();
+                    if(best!=null){
+                        var prefix=best.StartsWith("F")?0:1;
+                        if(gender.SelectedIndex!=prefix)gender.SelectedIndex=prefix;
+                        template.SelectedItem=best;
+                        faceStatus.Text="Face analyzed. Suggested template: "+best+" (estimated from facial geometry; verify in CAS).";
+                    }
+                }else faceStatus.Text=count>0?"Face recognized; landmarks extracted. No reliable template match found.":"No face detected. Try a clear frontal photo.";
                 File.Delete(output);
             } catch(Exception ex){faceStatus.Text="Face recognition unavailable: "+ex.Message;}
             finally {if(!analyze.IsDisposed)analyze.Enabled=true;}
