@@ -198,6 +198,34 @@ sealed class StudioWindow : Form {
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphStatus = new Label { AutoSize=true,ForeColor=Color.White,Text="Calibrate feature points and sensitivity before morphing." };
+        // Hover selection shares the same calibrated points as Auto Morph; no second coordinate store.
+        var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
+        var hoverStatus = new Label { Text="Hover detection uses calibrated facial points; uncalibrated regions need manual selection.",AutoSize=true,ForeColor=Color.White };
+        var hoverTimer = new System.Windows.Forms.Timer { Interval=180 };
+        string lastHoverFeature="";
+        hoverTimer.Tick+=(_,_)=>{
+            if(!hoverSelection.Checked || !GetCursorPos(out var cursor))return;
+            using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
+            if(game==null||!GetWindowRect(game.MainWindowHandle,out var rect))return;
+            if(cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)return;
+            string? nearest=null;
+            double nearestDistance=double.MaxValue;
+            foreach(var item in morphCalibration.Points) {
+                double dx=cursor.X-rect.Left-item.Value.X,dy=cursor.Y-rect.Top-item.Value.Y;
+                double distance=dx*dx+dy*dy;
+                if(distance<nearestDistance){nearestDistance=distance;nearest=item.Key;}
+            }
+            // Never select a distant facial region, e.g. hair when hovering over lips.
+            if(nearest==null||nearestDistance>55*55||nearest==lastHoverFeature)return;
+            int index=morphFeature.FindStringExact(nearest);
+            if(index<0)return;
+            morphFeature.SelectedIndex=index;
+            lastHoverFeature=nearest;
+            hoverStatus.Text="Hover selected: "+nearest;
+        };
+        hoverSelection.CheckedChanged+=(_,_)=>{if(hoverSelection.Checked)hoverTimer.Start();else hoverTimer.Stop();};
+        hoverTimer.Start();
+        p.Disposed+=(_,_)=>{hoverTimer.Stop();hoverTimer.Dispose();};
         var calibrateFeature = new Button { Text="Calibrate Selected Feature (4 seconds)",AutoSize=true };
         calibrateFeature.Click+=async (_,_)=>{
             calibrateFeature.Enabled=false;
@@ -271,7 +299,7 @@ sealed class StudioWindow : Form {
             finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;}
         };
         Caption(p,"Assisted Auto Face Morph — calibrate each feature in CAS Detail Edit");
-        p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
+        p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
         p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);
