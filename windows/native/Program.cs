@@ -250,19 +250,43 @@ sealed class StudioWindow : Form {
         var casDrop=new Label { Text="Or drop a CAS screenshot here (no file picker)",AutoSize=false,Width=570,Height=50,BorderStyle=BorderStyle.FixedSingle,TextAlign=ContentAlignment.MiddleCenter,ForeColor=Color.White };
         EnableScreenshotDrop(casDrop,file=>casStatus.Text="CAS screenshot selected: "+Path.GetFileName(file)+". Mode not verified.");
         p.Controls.Add(detect);p.Controls.Add(importCasShot);p.Controls.Add(casDrop);p.Controls.Add(casStatus);
-        var casMonitor=new System.Windows.Forms.Timer { Interval=2500 };
-        casMonitor.Tick+=(_,_)=>{
+        // Process/window titles cannot prove CAS mode. Do not overwrite user feedback
+        // every 2.5 seconds with a misleading process-only warning.
+        var casReference=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Simcraft Studio","CAS-Reference.png");
+        var calibrateCas=new Button { Text="Set CAS reference screenshot",AutoSize=true };
+        calibrateCas.Click+=async (_,_)=>{
+            calibrateCas.Enabled=false;
             try {
-                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
-                if(game==null){casStatus.Text="The Sims 4 is not running.";return;}
-                var title=game.MainWindowTitle??"";
-                casStatus.Text=title.Contains("Create a Sim",StringComparison.OrdinalIgnoreCase) || title.Contains("CAS",StringComparison.OrdinalIgnoreCase)
-                    ? "Possible CAS mode detected from window title (not verified)."
-                    : "The Sims 4 is running. CAS mode cannot be verified from the process alone.";
-            }catch(Exception ex){casStatus.Text="Game monitoring unavailable: "+ex.Message;}
+                var file=await PickScreenshotAsync();
+                if(file==null){casStatus.Text="CAS reference selection canceled.";return;}
+                await System.Threading.Tasks.Task.Run(()=>{
+                    using var img=new Bitmap(file);
+                    if((long)img.Width*img.Height>30_000_000)throw new InvalidDataException("Image too large.");
+                    Directory.CreateDirectory(Path.GetDirectoryName(casReference)!);
+                    img.Save(casReference,System.Drawing.Imaging.ImageFormat.Png);
+                }).WaitAsync(TimeSpan.FromSeconds(15));
+                casStatus.Text="CAS reference saved. Use Check CAS screen while the game is visible.";
+            }catch(Exception ex){casStatus.Text="CAS reference failed: "+ex.Message;}
+            finally{calibrateCas.Enabled=true;}
         };
-        casMonitor.Start();
-        page.Disposed+=(_,_)=>casMonitor.Dispose();
+        var checkCas=new Button { Text="Check CAS screen",AutoSize=true };
+        checkCas.Click+=async (_,_)=>{
+            checkCas.Enabled=false;
+            casStatus.Text="Checking current game screen against CAS reference...";
+            try {
+                if(!File.Exists(casReference))throw new InvalidOperationException("Set CAS reference screenshot first.");
+                double similarity=await System.Threading.Tasks.Task.Run(()=>{
+                    using var reference=new Bitmap(casReference);
+                    using var current=CaptureSimsWindow();
+                    return BuildUiSimilarity(reference,current);
+                }).WaitAsync(TimeSpan.FromSeconds(12));
+                casStatus.Text=similarity>=0.87
+                    ? "CAS screen visually resembles saved reference ("+similarity.ToString("P0")+"). This is a heuristic, not verified game state."
+                    : "CAS not visually confirmed ("+similarity.ToString("P0")+"). Ensure Sims 4 is visible and the screenshot matches the current resolution.";
+            }catch(Exception ex){casStatus.Text="CAS check unavailable: "+ex.Message;}
+            finally{checkCas.Enabled=true;}
+        };
+        p.Controls.Add(calibrateCas);p.Controls.Add(checkCas);
         var backgroundPreview=new PictureBox { Size=new Size(440,220),SizeMode=PictureBoxSizeMode.Zoom,BorderStyle=BorderStyle.FixedSingle };
         var backgroundButton=new Button { Text="Choose CAS workspace background",AutoSize=true };
         backgroundButton.Click+=(_,_)=>{using var dialog=new OpenFileDialog{Filter="Images|*.png;*.jpg;*.jpeg;*.bmp"};if(dialog.ShowDialog()!=DialogResult.OK)return;try{using var img=Image.FromFile(dialog.FileName);var old=backgroundPreview.Image;backgroundPreview.Image=new Bitmap(img);old?.Dispose();}catch(Exception ex){MessageBox.Show(ex.Message);}};
