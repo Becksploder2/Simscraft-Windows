@@ -190,9 +190,13 @@ sealed class StudioWindow : Form {
         var casStatus=new Label { Text="CAS not checked", AutoSize=true, ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{try{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();}catch(Exception ex){casStatus.Text="Detection unavailable: "+ex.Message;}};
-        var capture=new Button { Text="Capture Sims 4 window",AutoSize=true };
-        capture.Click+=(_,_)=>{try{var process=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));if(process==null||process.MainWindowHandle==IntPtr.Zero){casStatus.Text="No visible Sims 4 window found.";return;}if(!GetWindowRect(process.MainWindowHandle,out var rect))throw new Exception("Cannot read game window.");int width=rect.Right-rect.Left,height=rect.Bottom-rect.Top;if(width<100||height<100||width>10000||height>10000)throw new Exception("Invalid window dimensions.");using var image=new Bitmap(width,height);using(var graphics=Graphics.FromImage(image)){graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(width,height));}using var dialog=new SaveFileDialog{Filter="PNG image|*.png",FileName="Simcraft-CAS-Capture.png"};if(dialog.ShowDialog()==DialogResult.OK){image.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png);casStatus.Text="Captured game window to "+dialog.FileName+". CAS mode is not automatically verified.";}process.Dispose();}catch(Exception ex){casStatus.Text="Capture failed: "+ex.Message;}};
-        p.Controls.Add(detect);p.Controls.Add(capture);p.Controls.Add(casStatus);
+        var importCasShot=new Button { Text="Import CAS screenshot",AutoSize=true };
+        importCasShot.Click+=(_,_)=>{
+            using var dialog=new OpenFileDialog { Filter="Screenshots|*.png;*.jpg;*.jpeg",CheckFileExists=true };
+            if(dialog.ShowDialog()!=DialogResult.OK)return;
+            casStatus.Text="CAS screenshot selected: "+Path.GetFileName(dialog.FileName)+". CAS mode not automatically verified.";
+        };
+        p.Controls.Add(detect);p.Controls.Add(importCasShot);p.Controls.Add(casStatus);
         var casMonitor=new System.Windows.Forms.Timer { Interval=2500 };
         casMonitor.Tick+=(_,_)=>{
             try {
@@ -324,53 +328,19 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
         };
         p.Controls.Add(detect);p.Controls.Add(status);
-        var captureBuild=new Button { Text="Capture Build/Buy screen",AutoSize=true };
-        captureBuild.Click+=async (_,_)=>{
-            captureBuild.Enabled=false;
-            status.Text="Capturing Sims 4 window in background...";
-            try {
-                var result=await System.Threading.Tasks.Task.Run(()=>{
-                    using var game=Process.GetProcesses().FirstOrDefault(x=>
-                        x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
-                        x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
-                    if(game==null)return "The Sims 4 process was not found.";
-                    var handle=game.MainWindowHandle;
-                    if(handle==IntPtr.Zero)return "Sims 4 is running, but no visible game window was found.";
-                    if(!GetWindowRect(handle,out var rect))return "Unable to locate the Sims 4 window.";
-                    int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
-                    if(w<100||h<100||w>8192||h>8192||((long)w*h)>30_000_000)
-                        return "Game window dimensions are invalid or too large.";
-                    var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Simcraft Studio","Buildcraft");
-                    Directory.CreateDirectory(folder);
-                    var filename=Path.Combine(folder,"BuildBuy-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".png");
-                    using(var shot=new Bitmap(w,h)){
-                        using(var graphics=Graphics.FromImage(shot))
-                            graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(w,h));
-                        shot.Save(filename,System.Drawing.Imaging.ImageFormat.Png);
-                    }
-                    return "Capture saved: "+filename+" (Build/Buy mode not yet verified).";
-                }).WaitAsync(TimeSpan.FromSeconds(15));
-                status.Text=result;
-            } catch(TimeoutException){status.Text="Capture timed out. The interface remains responsive.";}
-              catch(Exception ex){status.Text="Capture failed: "+ex.Message;}
-            finally{captureBuild.Enabled=true;}
-        };
-        p.Controls.Add(captureBuild);
         var calibrationFile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Simcraft Studio","Buildcraft-BuildBuy-Reference.png");
         var calibrate=new Button { Text="Calibrate Build/Buy (capture while in Build Mode)",AutoSize=true };
         var verify=new Button { Text="Check Build/Buy Mode",AutoSize=true };
-        calibrate.Click+=async (_,_)=>{
-            calibrate.Enabled=false;verify.Enabled=false;
-            status.Text="Recording Build/Buy toolbar reference...";
+        calibrate.Text="Import Build/Buy reference screenshot";
+        calibrate.Click+=(_,_)=>{
+            using var dialog=new OpenFileDialog { Filter="Screenshots|*.png;*.jpg;*.jpeg",CheckFileExists=true };
+            if(dialog.ShowDialog()!=DialogResult.OK)return;
             try {
-                await System.Threading.Tasks.Task.Run(()=>{
-                    using var image=CaptureSimsWindow();
-                    Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
-                    image.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
-                }).WaitAsync(TimeSpan.FromSeconds(15));
-                status.Text="Build/Buy reference saved. Switch to Live Mode and test detection, then return to Build Mode.";
-            }catch(Exception ex){status.Text="Calibration failed: "+ex.Message;}
-            finally{calibrate.Enabled=true;verify.Enabled=true;}
+                using var source=new Bitmap(dialog.FileName);
+                Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
+                source.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
+                status.Text="Build/Buy reference imported. You can now check mode.";
+            }catch(Exception ex){status.Text="Reference import failed: "+ex.Message;}
         };
         verify.Click+=async (_,_)=>{
             if(!File.Exists(calibrationFile)){status.Text="Calibrate while in Build/Buy Mode first.";return;}
