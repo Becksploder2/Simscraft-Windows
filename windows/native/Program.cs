@@ -63,6 +63,10 @@ sealed class StudioWindow : Form {
         } catch { }
         return false;
     }
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extraInfo);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
     static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64), BackgroundImage=page.BackgroundImage, BackgroundImageLayout=ImageLayout.Stretch }; page.Controls.Add(p); return p; }
@@ -131,10 +135,44 @@ sealed class StudioWindow : Form {
         Caption(p,"SIM MORPH STUDIO — ORIGINAL CONTROLS");
         var refreshPreview=new Button { Text="Refresh Preview",AutoSize=true };
         refreshPreview.Click+=(_,_)=>{preview.Invalidate();importStatus.Text="Preview refreshed.";};
+        Point? calibratedClick=null;
         var setClick=new Button { Text="Set CAS Click Point",AutoSize=true };
-        setClick.Click+=(_,_)=>importStatus.Text="CAS click calibration requires an active game connection; no click sent.";
+        setClick.Click+=async (_,_)=>{
+            setClick.Enabled=false;
+            importStatus.Text="Switch to Sims 4 and hover over the desired CAS face point. Calibrating in 4 seconds...";
+            try {
+                await System.Threading.Tasks.Task.Delay(4000);
+                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+                if(game==null||game.MainWindowHandle==IntPtr.Zero||!GetWindowRect(game.MainWindowHandle,out var rect)||!GetCursorPos(out var cursor))
+                    throw new InvalidOperationException("Sims 4 window or cursor unavailable.");
+                if(GetForegroundWindow()!=game.MainWindowHandle||cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)
+                    throw new InvalidOperationException("Hover inside the foreground Sims 4 window during calibration.");
+                calibratedClick=new Point(cursor.X-rect.Left,cursor.Y-rect.Top);
+                importStatus.Text="CAS point calibrated at ("+calibratedClick.Value.X+","+calibratedClick.Value.Y+"). Apply One CAS Click to test.";
+            }catch(Exception ex){importStatus.Text="Calibration failed: "+ex.Message;}
+            finally{setClick.Enabled=true;}
+        };
         var applyClick=new Button { Text="Apply One CAS Click",AutoSize=true };
-        applyClick.Click+=(_,_)=>importStatus.Text="No CAS click sent: calibration and game control are not available.";
+        applyClick.Click+=async (_,_)=>{
+            if(calibratedClick==null){importStatus.Text="Set CAS Click Point first.";return;}
+            applyClick.Enabled=false;
+            importStatus.Text="Switch to Sims 4. One click will be sent in 4 seconds. Move away from this button.";
+            try {
+                await System.Threading.Tasks.Task.Delay(4000);
+                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
+                if(game==null||game.MainWindowHandle==IntPtr.Zero||GetForegroundWindow()!=game.MainWindowHandle||!GetWindowRect(game.MainWindowHandle,out var rect))
+                    throw new InvalidOperationException("Sims 4 must be the foreground window.");
+                var point=calibratedClick.Value;
+                if(point.X<0||point.Y<0||point.X>=rect.Right-rect.Left||point.Y>=rect.Bottom-rect.Top)
+                    throw new InvalidOperationException("Calibrated point is outside the current game window.");
+                if(!SetCursorPos(rect.Left+point.X,rect.Top+point.Y))throw new InvalidOperationException("Cannot move cursor.");
+                mouse_event(0x0002,0,0,0,UIntPtr.Zero);
+                await System.Threading.Tasks.Task.Delay(70);
+                mouse_event(0x0004,0,0,0,UIntPtr.Zero);
+                importStatus.Text="One calibrated CAS click sent. Verify the result in Sims 4.";
+            }catch(Exception ex){importStatus.Text="CAS click canceled: "+ex.Message;}
+            finally{applyClick.Enabled=true;}
+        };
         p.Controls.Add(refreshPreview);p.Controls.Add(setClick);p.Controls.Add(applyClick);
         var faceStatus=new Label { Text="Face recognition: no photo analyzed",AutoSize=true,ForeColor=Color.White };
         var analyze=new Button { Text="Analyze Faces",AutoSize=true };
