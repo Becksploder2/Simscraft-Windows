@@ -184,18 +184,18 @@ sealed class StudioWindow : Form {
             if(!File.Exists(script)||!File.Exists(model)){
                 faceStatus.Text=!File.Exists(script)?"Face analyzer script missing from this build.":"Face landmark model missing from this build.";return;
             }
-            if(!File.Exists(Path.Combine(root,"FaceEngine","pythonw.exe"))){
-                faceStatus.Text="Face model found, but the self-contained Python runtime is not bundled yet. Face analysis is unavailable in this build.";
+            var analyzerExe=Path.Combine(root,"FaceEngine","BundledAnalyzer","SimcraftFaceAnalyzer.exe");
+            if(!File.Exists(analyzerExe)){
+                faceStatus.Text="Bundled face analyzer executable missing. Download the newest complete portable ZIP.";
                 return;
             }
             analyze.Enabled=false;faceStatus.Text="Analyzing face...";
             try {
                 var output=Path.Combine(Path.GetTempPath(),"simcraft-face-"+Guid.NewGuid().ToString("N")+".json");
                 using var process=new Process { StartInfo=new ProcessStartInfo {
-                    FileName=Path.Combine(root,"FaceEngine","pythonw.exe"),UseShellExecute=false,CreateNoWindow=true,
+                    FileName=analyzerExe,UseShellExecute=false,CreateNoWindow=true,
                     RedirectStandardError=true,RedirectStandardOutput=true
                 }};
-                process.StartInfo.ArgumentList.Add(script);
                 process.StartInfo.ArgumentList.Add(selectedPhoto);
                 process.StartInfo.ArgumentList.Add("--model");
                 process.StartInfo.ArgumentList.Add(model);
