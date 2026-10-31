@@ -23,7 +23,7 @@ sealed class StudioWindow : Form {
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
-        Shown += async (_,_) => { await System.Threading.Tasks.Task.Delay(1200); if(!IsDisposed) await CheckForUpdates(null); };
+        // Test builds never interrupt the user with update prompts on startup.
         try {
             var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
             if(File.Exists(path)) {
@@ -678,8 +678,7 @@ sealed class StudioWindow : Form {
             var tag=json.RootElement.GetProperty("tag_name").GetString()??"";
             if(!Version.TryParse(tag.TrimStart('v','V'),out var latest)||latest<=new Version(CurrentVersion)){if(status!=null)status.Text="Up to date (v"+CurrentVersion+").";return;}
             if(status!=null)status.Text="Update available: "+tag;
-            if(MessageBox.Show("Simcraft Studio "+tag+" is available. Open the official release page?","Update available",MessageBoxButtons.YesNo)==DialogResult.Yes)
-                Process.Start(new ProcessStartInfo("https://github.com/Becksploder2/Simscraft-Windows/releases/latest"){UseShellExecute=true});
+            // Manual check only: do not interrupt testing with a release prompt.
         } catch(Exception ex){if(status!=null)status.Text="Update check failed: "+ex.Message;}
     }
     void BuildModTab(TabPage page) {
