@@ -16,6 +16,19 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Bundle standalone face analyzer
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "mediapipe>=0.10.14,<0.11" "Pillow>=10,<13" "numpy<2" pyinstaller
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name SimcraftFaceAnalyzer --collect-all mediapipe --collect-all cv2 windows/payload/FaceEngine/analyze_faces.py
+          if (!(Test-Path dist/SimcraftFaceAnalyzer/SimcraftFaceAnalyzer.exe)) { throw "Face analyzer executable missing" }
+          New-Item -ItemType Directory -Force -Path windows/payload/FaceEngine/BundledAnalyzer | Out-Null
+          Copy-Item dist/SimcraftFaceAnalyzer/* windows/payload/FaceEngine/BundledAnalyzer -Recurse -Force
       - name: Build native tabbed app with legacy resources
         shell: pwsh
         run: |
