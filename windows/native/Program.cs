@@ -306,7 +306,7 @@ sealed class StudioWindow : Form {
         Caption(p,"Use existing packages for research. Do not redistribute third-party assets without permission.");
     }
     static void EnableScreenshotDrop(Control target, Action<string> received) {
-        target.AllowDrop=true;
+        // Drag/drop registration is deliberately disabled: WinForms can throw\n        // DragDrop registration did not succeed on machines without an available OLE context.\n        // Keep the app running; the screenshot import buttons remain available.\n        return;\n        // target.AllowDrop=true;
         target.DragEnter+=(_,e)=>{
             if(e.Data?.GetDataPresent(DataFormats.FileDrop)==true)e.Effect=DragDropEffects.Copy;
         };
