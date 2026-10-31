@@ -20,6 +20,7 @@ public sealed class CasController {
         points[feature]=screenPoint; Save();
     }
     public bool IsCalibrated(string feature) => points.ContainsKey(feature);
+    public bool TryGetPoint(string feature, out Point point) => points.TryGetValue(feature,out point);
     public void Load() {
         if (!File.Exists(calibrationPath)) return;
         try {
