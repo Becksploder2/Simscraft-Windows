@@ -22,6 +22,9 @@ jobs:
           dotnet publish windows/native/SimcraftNative.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o windows/native/publish
           New-Item -ItemType Directory -Force -Path portable | Out-Null
           Copy-Item windows/payload/* portable -Recurse -Force
+          New-Item -ItemType Directory -Force -Path portable/Models | Out-Null
+          Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task" -OutFile portable/Models/face_landmarker.task
+          if ((Get-Item portable/Models/face_landmarker.task).Length -lt 100000) { throw "Face landmarker model download failed validation" }
           git clone --depth 1 https://github.com/Becksploder2/simcraft-studio-mac.git template-source
           New-Item -ItemType Directory -Force -Path portable/Templates | Out-Null
           Copy-Item template-source/Assets/FaceTemplates/Female portable/Templates/Female -Recurse -Force
