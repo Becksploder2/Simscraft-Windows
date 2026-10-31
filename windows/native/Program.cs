@@ -191,10 +191,15 @@ sealed class StudioWindow : Form {
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{try{var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();casStatus.Text=games.Length>0?"The Sims 4 process detected ("+games.Length+"). Enter CAS for capture.":"The Sims 4 process not detected.";foreach(var game in games)game.Dispose();}catch(Exception ex){casStatus.Text="Detection unavailable: "+ex.Message;}};
         var importCasShot=new Button { Text="Import CAS screenshot",AutoSize=true };
-        importCasShot.Click+=(_,_)=>{
-            using var dialog=new OpenFileDialog { Filter="Screenshots|*.png;*.jpg;*.jpeg",CheckFileExists=true };
-            if(dialog.ShowDialog()!=DialogResult.OK)return;
-            casStatus.Text="CAS screenshot selected: "+Path.GetFileName(dialog.FileName)+". CAS mode not automatically verified.";
+        importCasShot.Click+=async (_,_)=>{
+            importCasShot.Enabled=false;
+            casStatus.Text="Opening screenshot picker...";
+            try {
+                var file=await PickScreenshotAsync();
+                casStatus.Text=file==null?"Screenshot selection canceled.":"CAS screenshot selected: "+Path.GetFileName(file)+". CAS mode not verified.";
+            }catch(TimeoutException){casStatus.Text="Screenshot picker timed out. App remains responsive.";}
+             catch(Exception ex){casStatus.Text="Screenshot selection failed: "+ex.Message;}
+            finally{importCasShot.Enabled=true;}
         };
         p.Controls.Add(detect);p.Controls.Add(importCasShot);p.Controls.Add(casStatus);
         var casMonitor=new System.Windows.Forms.Timer { Interval=2500 };
@@ -274,6 +279,22 @@ sealed class StudioWindow : Form {
         p.Controls.Add(import);p.Controls.Add(status);p.Controls.Add(report);
         Caption(p,"Use existing packages for research. Do not redistribute third-party assets without permission.");
     }
+    static async System.Threading.Tasks.Task<string?> PickScreenshotAsync() {
+        var completion=new System.Threading.Tasks.TaskCompletionSource<string?>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread=new System.Threading.Thread(()=>{
+            try {
+                using var dialog=new OpenFileDialog {
+                    Filter="Screenshots|*.png;*.jpg;*.jpeg",CheckFileExists=true,
+                    AutoUpgradeEnabled=false,RestoreDirectory=true,DereferenceLinks=true
+                };
+                completion.TrySetResult(dialog.ShowDialog()==DialogResult.OK?dialog.FileName:null);
+            }catch(Exception ex){completion.TrySetException(ex);}
+        });
+        thread.IsBackground=true;
+        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+        thread.Start();
+        return await completion.Task.WaitAsync(TimeSpan.FromSeconds(30));
+    }
     static Bitmap CaptureSimsWindow() {
         using var game=Process.GetProcesses().FirstOrDefault(x=>
             x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
@@ -332,15 +353,23 @@ sealed class StudioWindow : Form {
         var calibrate=new Button { Text="Calibrate Build/Buy (capture while in Build Mode)",AutoSize=true };
         var verify=new Button { Text="Check Build/Buy Mode",AutoSize=true };
         calibrate.Text="Import Build/Buy reference screenshot";
-        calibrate.Click+=(_,_)=>{
-            using var dialog=new OpenFileDialog { Filter="Screenshots|*.png;*.jpg;*.jpeg",CheckFileExists=true };
-            if(dialog.ShowDialog()!=DialogResult.OK)return;
+        calibrate.Click+=async (_,_)=>{
+            calibrate.Enabled=false;
+            status.Text="Opening Build/Buy screenshot picker...";
             try {
-                using var source=new Bitmap(dialog.FileName);
-                Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
-                source.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
-                status.Text="Build/Buy reference imported. You can now check mode.";
-            }catch(Exception ex){status.Text="Reference import failed: "+ex.Message;}
+                var file=await PickScreenshotAsync();
+                if(file==null){status.Text="Reference selection canceled.";return;}
+                await System.Threading.Tasks.Task.Run(()=>{
+                    using var source=new Bitmap(file);
+                    if(source.Width>8192||source.Height>8192||((long)source.Width*source.Height)>30_000_000)
+                        throw new InvalidDataException("Screenshot is too large.");
+                    Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
+                    source.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
+                }).WaitAsync(TimeSpan.FromSeconds(15));
+                status.Text="Build/Buy reference imported. Ready to check mode.";
+            }catch(TimeoutException){status.Text="Screenshot picker or loading timed out. App remains responsive.";}
+             catch(Exception ex){status.Text="Reference import failed: "+ex.Message;}
+            finally{calibrate.Enabled=true;}
         };
         verify.Click+=async (_,_)=>{
             if(!File.Exists(calibrationFile)){status.Text="Calibrate while in Build/Buy Mode first.";return;}
