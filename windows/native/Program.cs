@@ -727,12 +727,43 @@ sealed class StudioWindow : Form {
         var plan=new Button { Text="Create starter build plan",AutoSize=true };
         plan.Click+=(_,_)=>{
             if(string.IsNullOrWhiteSpace(prompt.Text)){status.Text="Describe the building first.";return;}
-            var text=prompt.Text.Trim();
-            output.Text="BUILDCRAFT DRAFT PLAN"+Environment.NewLine+
-                "Lot: "+width.Value+" x "+depth.Value+" tiles"+Environment.NewLine+
-                "Description: "+text+Environment.NewLine+Environment.NewLine+
-                "Status: Draft specification only. AI floorplan generation, Build Mode recognition, and automated construction are not connected yet.";
-            status.Text="Draft plan created locally. No game actions performed.";
+            int lotW=(int)width.Value,lotD=(int)depth.Value;
+            // Conservative starter footprint with a two-tile lot margin.
+            int houseW=Math.Max(6,lotW-4),houseD=Math.Max(6,lotD-4);
+            int startX=(lotW-houseW)/2,startY=(lotD-houseD)/2;
+            var description=prompt.Text.Trim();
+            var lower=description.ToLowerInvariant();
+            bool garage=lower.Contains("garage");
+            bool kitchen=lower.Contains("kitchen");
+            bool bath=lower.Contains("bath");
+            bool bedroom=lower.Contains("bedroom");
+            var rooms=new List<string>{"Entry / living area"};
+            if(kitchen)rooms.Add("Kitchen");
+            if(bath)rooms.Add("Bathroom");
+            if(bedroom)rooms.Add("Bedroom(s)");
+            if(garage)rooms.Add("Garage (space allocation pending)");
+            var map=new System.Text.StringBuilder();
+            for(int y=0;y<lotD;y++){
+                for(int x=0;x<lotW;x++){
+                    bool wall=(x>=startX&&x<startX+houseW&&
+                        (y==startY||y==startY+houseD-1))||
+                        (y>=startY&&y<startY+houseD&&
+                        (x==startX||x==startX+houseW-1));
+                    // Entrance opening on south wall (visual plan only).
+                    bool door=y==startY+houseD-1&&x==startX+houseW/2;
+                    map.Append(door?'D':wall?'#':'.');
+                }
+                map.AppendLine();
+            }
+            output.Text="BUILDCRAFT — STARTER FOOTPRINT (PREVIEW ONLY)"+Environment.NewLine+
+                "Lot: "+lotW+" x "+lotD+" tiles"+Environment.NewLine+
+                "House: "+houseW+" x "+houseD+" tiles, origin ("+startX+", "+startY+")"+Environment.NewLine+
+                "Requested rooms: "+string.Join(", ",rooms)+Environment.NewLine+
+                "Description: "+description+Environment.NewLine+Environment.NewLine+
+                "Top-down grid (# perimeter wall, D entry opening, . unoccupied):"+Environment.NewLine+
+                map.ToString()+Environment.NewLine+
+                "Room partitions, furniture, floor levels, and game placement are not generated yet. No game input sent.";
+            status.Text="Starter footprint generated locally. Construction remains dry-run.";
         };
         p.Controls.Add(plan);p.Controls.Add(output);
         var export=new Button { Text="Export Buildcraft project",AutoSize=true };
