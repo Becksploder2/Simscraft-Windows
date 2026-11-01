@@ -237,7 +237,10 @@ sealed class StudioWindow : Form {
         string lastHoverFeature="";
         string hoverCandidate="";
         int hoverCandidateTicks=0;
+        bool morphInProgress=false;
+        DateTime hoverResumeAt=DateTime.MinValue;
         hoverTimer.Tick+=(_,_)=>{
+            if(morphInProgress||DateTime.UtcNow<hoverResumeAt)return;
             if(!hoverSelection.Checked || !GetCursorPos(out var cursor))return;
             using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
             if(game==null||!GetWindowRect(game.MainWindowHandle,out var rect))return;
@@ -276,7 +279,7 @@ sealed class StudioWindow : Form {
             bool down=(GetAsyncKeyState(0x01)&0x8000)!=0;
             bool justPressed=down&&!previousLeftDown;
             previousLeftDown=down;
-            if(!justPressed||!hoverSelection.Checked)return;
+            if(!justPressed||!hoverSelection.Checked||morphInProgress||DateTime.UtcNow<hoverResumeAt)return;
             string feature=morphFeature.SelectedItem?.ToString()??"";
             if(string.IsNullOrEmpty(feature)||completedFeatures.Contains(feature))return;
             using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
@@ -291,6 +294,7 @@ sealed class StudioWindow : Form {
         autoMorph.Click+=async (_,_)=>{
             if(string.IsNullOrEmpty(selectedPhoto)){morphStatus.Text="Import a reference photograph first.";return;}
             autoMorph.Enabled=false;
+            morphInProgress=true;
             string? output=null;
             string? capturedPath=null;
             try {
@@ -324,7 +328,16 @@ sealed class StudioWindow : Form {
                 };
                 var steps=Simcraft.Cas.FaceMorphPlanner.Plan(await File.ReadAllTextAsync(output),sensitivity);
                 if(steps.Count==0){morphStatus.Text="No movement calculated for "+selectedFeature+".";return;}
-                var confirmation=MessageBox.Show(this,"Apply "+steps.Count+" calculated CAS drags? Focus Sims 4 within 5 seconds. Use only in CAS Detail Edit. Verify each result.","Confirm assisted morph",MessageBoxButtons.OKCancel);
+                // Topmost dialog is deliberately shown over the game, including fullscreen-windowed CAS.
+                using var prompt=new Form { Text="Simscraft — Confirm Auto Morph",TopMost=true,StartPosition=FormStartPosition.CenterScreen,Size=new Size(470,205),FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=true };
+                var promptText=new Label { Text="Apply "+steps.Count+" calculated CAS drags to "+selectedFeature+"?\\n\\nKeep The Sims 4 in Detail Edit mode. Press Esc during a drag to cancel.",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Padding=new Padding(18) };
+                var promptButtons=new FlowLayoutPanel { Dock=DockStyle.Bottom,Height=48,FlowDirection=FlowDirection.RightToLeft };
+                var yes=new Button { Text="Apply",DialogResult=DialogResult.OK,Width=100 };
+                var no=new Button { Text="Cancel",DialogResult=DialogResult.Cancel,Width=100 };
+                promptButtons.Controls.Add(yes);promptButtons.Controls.Add(no);
+                prompt.Controls.Add(promptText);prompt.Controls.Add(promptButtons);
+                prompt.AcceptButton=yes;prompt.CancelButton=no;
+                var confirmation=prompt.ShowDialog();
                 if(confirmation!=DialogResult.OK)return;
                 morphStatus.Text="Focus Sims 4 now...";
                 await System.Threading.Tasks.Task.Delay(5000);
@@ -344,13 +357,15 @@ sealed class StudioWindow : Form {
                     finally { morphCalibration.Calibrate(step.Feature,relative); }
                     applied++;
                     completedFeatures.Add(step.Feature);
+                    // Keep the feature selected in Simscraft after the drag.
+                    morphFeature.SelectedItem=step.Feature;
                     completedStatus.Text="Completed features: "+string.Join(", ",completedFeatures.OrderBy(x=>x));
-                    lastHoverFeature="";hoverCandidate="";hoverCandidateTicks=0;
+                    lastHoverFeature=step.Feature;hoverCandidate="";hoverCandidateTicks=0;
                     morphStatus.Text="Applied "+applied+"/"+steps.Count+" features. Review results before another pass.";
                     await System.Threading.Tasks.Task.Delay(250);
                 }
             }catch(Exception ex){morphStatus.Text="Auto morph stopped: "+ex.Message;}
-            finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;}
+            finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;morphInProgress=false;hoverResumeAt=DateTime.UtcNow.AddSeconds(2);}
         };
         Caption(p,"Assisted Auto Face Morph — only the selected facial feature is adjusted");
         p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);
