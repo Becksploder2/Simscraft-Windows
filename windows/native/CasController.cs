@@ -37,27 +37,36 @@ public sealed class CasController {
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extraInfo);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     const uint LEFTDOWN=0x0002, LEFTUP=0x0004;
+    const int VK_ESCAPE=0x1B;
     public async Task DragAsync(string feature, int dx, int dy, Func<IntPtr,bool> isSimsWindow, CancellationToken cancellationToken=default) {
         if (!points.TryGetValue(feature,out var p)) throw new InvalidOperationException("Calibrate "+feature+" before applying CAS edits.");
         if (Math.Abs(dx)>180 || Math.Abs(dy)>180) throw new ArgumentOutOfRangeException(nameof(dx),"Single drag exceeds safety limit.");
         var target=GetForegroundWindow();
         if(target==IntPtr.Zero || !isSimsWindow(target)) throw new InvalidOperationException("Focus The Sims 4 before applying a morph.");
         bool pressed=false;
+        bool started=false;
         try {
             cancellationToken.ThrowIfCancellationRequested();
             if(!SetCursorPos(p.X,p.Y)) throw new InvalidOperationException("Could not position cursor on the calibrated feature.");
+            started=true;
             await Task.Delay(90,cancellationToken);
+            if((GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0)throw new OperationCanceledException("Escape pressed.");
             if(GetForegroundWindow()!=target) throw new InvalidOperationException("CAS focus changed.");
             mouse_event(LEFTDOWN,0,0,0,UIntPtr.Zero); pressed=true;
             for(int i=1;i<=12;i++) {
                 cancellationToken.ThrowIfCancellationRequested();
+                if((GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0)throw new OperationCanceledException("Escape pressed.");
                 if(GetForegroundWindow()!=target) throw new InvalidOperationException("CAS focus changed.");
                 if(!SetCursorPos(p.X+(int)Math.Round(dx*i/12.0),p.Y+(int)Math.Round(dy*i/12.0))) throw new InvalidOperationException("Cursor movement failed.");
                 await Task.Delay(18,cancellationToken);
             }
         } finally {
             if(pressed) mouse_event(LEFTUP,0,0,0,UIntPtr.Zero);
+            // A drag ending above the cheek can hover-select hair. Return to the
+            // calibrated face point after release, without another mouse click.
+            if(started && GetForegroundWindow()==target) SetCursorPos(p.X,p.Y);
         }
     }
 }
