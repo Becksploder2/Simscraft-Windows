@@ -327,6 +327,17 @@ sealed class StudioWindow : Form {
 
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
+        // A template recommendation is not an in-game selection. Require CAS calibration
+        // and verified foreground game focus before allowing any future preset automation.
+        var templateApplyStatus=new Label { AutoSize=true,ForeColor=Color.White,
+            Text="In-game preset selection not calibrated. Suggested templates are not applied automatically." };
+        var templateApplyInfo=new Button { Text="In-game Template Selection Status",AutoSize=true };
+        templateApplyInfo.Click+=(_,_)=>{
+            var id=template.SelectedItem?.ToString()??"(none)";
+            templateApplyStatus.Text="Suggested "+id+": open the Sims 4 CAS face presets and select it manually. "+
+                "Automatic preset clicking is disabled until preset grid positions and selection verification are calibrated.";
+        };
+        p.Controls.Add(templateApplyInfo);p.Controls.Add(templateApplyStatus);
         var templatePreview=new PictureBox { Size=new Size(260,260),SizeMode=PictureBoxSizeMode.Zoom,BorderStyle=BorderStyle.FixedSingle };
         void RefreshTemplatePreview(){
             try {
