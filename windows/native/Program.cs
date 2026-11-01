@@ -297,6 +297,8 @@ sealed class StudioWindow : Form {
         };
         autoCalibrationTimer.Start();
         page.Disposed+=(_,_)=>autoCalibrationTimer.Dispose();
+        var hairClearance=new CheckBox { Text="Forehead/Eyebrows: require hair cleared before morphing",Checked=true,AutoSize=true };
+        var hairClearanceHelp=new Label { Text="For bangs or covered brows, temporarily choose a bald/clear hairstyle in CAS, then restore your original style afterward. Automatic restoration is not yet supported.",AutoSize=true,MaximumSize=new Size(530,0),ForeColor=Color.White };
         var autoMorph = new Button { Text="Auto Morph Selected Feature",AutoSize=true };
         autoMorph.Click+=async (_,_)=>{
             if(string.IsNullOrEmpty(selectedPhoto)){morphStatus.Text="Import a reference photograph first.";return;}
@@ -334,6 +336,13 @@ sealed class StudioWindow : Form {
                     [selectedFeature]=((double)morphScaleX.Value,(double)morphScaleY.Value)
                 };
                 var steps=Simcraft.Cas.FaceMorphPlanner.Plan(await File.ReadAllTextAsync(output),sensitivity);
+                // Never allow the planner to move a different region than the requested one.
+                if(steps.Any(step=>!string.Equals(step.Feature,selectedFeature,StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException("Planner returned a different facial region; morph canceled.");
+                if(hairClearance.Checked&&(selectedFeature=="eyebrows"||selectedFeature=="forehead")) {
+                    var cleared=MessageBox.Show("Hair can obstruct "+selectedFeature+". In The Sims 4, temporarily choose a bald or clear-forehead hairstyle before continuing.\\n\\nHave you cleared the hair and confirmed the intended facial region is visible?","Confirm clear facial region",MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2,MessageBoxOptions.DefaultDesktopOnly);
+                    if(cleared!=DialogResult.Yes){morphStatus.Text="Morph paused until hair is cleared.";return;}
+                }
                 if(steps.Count==0){morphStatus.Text="No movement calculated for "+selectedFeature+".";return;}
                 // Topmost dialog is deliberately shown over the game, including fullscreen-windowed CAS.
                 using var prompt=new Form { Text="Simscraft — Confirm Auto Morph",TopMost=true,StartPosition=FormStartPosition.CenterScreen,Size=new Size(470,205),FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=true };
@@ -376,7 +385,7 @@ sealed class StudioWindow : Form {
             finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;morphInProgress=false;hoverResumeAt=DateTime.UtcNow.AddSeconds(2);}
         };
         Caption(p,"Assisted Auto Face Morph — only the selected facial feature is adjusted");
-        p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);
+        p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);p.Controls.Add(hairClearance);p.Controls.Add(hairClearanceHelp);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
         p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);p.Controls.Add(morphProgressLabel);p.Controls.Add(morphProgressBar);p.Controls.Add(completedStatus);p.Controls.Add(resetCompleted);
