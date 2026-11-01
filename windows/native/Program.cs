@@ -232,6 +232,7 @@ sealed class StudioWindow : Form {
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
         resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";hoverStatus.Text="All features available again.";};
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
         var hoverTimer = new System.Windows.Forms.Timer { Interval=75 };
         string lastHoverFeature="";
         string hoverCandidate="";
@@ -266,21 +267,26 @@ sealed class StudioWindow : Form {
         hoverSelection.CheckedChanged+=(_,_)=>{if(hoverSelection.Checked)hoverTimer.Start();else hoverTimer.Stop();};
         hoverTimer.Start();
         p.Disposed+=(_,_)=>{hoverTimer.Stop();hoverTimer.Dispose();};
-        var calibrateFeature = new Button { Text="Calibrate Selected Feature (4 seconds)",AutoSize=true };
-        calibrateFeature.Click+=async (_,_)=>{
-            calibrateFeature.Enabled=false;
-            try {
-                morphStatus.Text="Focus Sims 4 and hover over "+morphFeature.Text+"...";
-                await System.Threading.Tasks.Task.Delay(4000);
-                using var game=Process.GetProcesses().FirstOrDefault(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
-                if(game==null||game.MainWindowHandle==IntPtr.Zero||GetForegroundWindow()!=game.MainWindowHandle||!GetCursorPos(out var cursor)||!GetWindowRect(game.MainWindowHandle,out var rect)
-                    ||cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)
-                    throw new InvalidOperationException("Hover inside the foreground Sims 4 window.");
-                morphCalibration.Calibrate(morphFeature.Text,new Point(cursor.X-rect.Left,cursor.Y-rect.Top));
-                morphStatus.Text=morphFeature.Text+" calibrated. Repeat for other features.";
-            }catch(Exception ex){morphStatus.Text="Calibration failed: "+ex.Message;}
-            finally{calibrateFeature.Enabled=true;}
+        // Auto-calibration: select a feature in the preview/dropdown, then click that
+        // feature in foreground CAS. No separate calibration button or countdown.
+        // Do not guess an uncalibrated feature from arbitrary game-screen coordinates.
+        bool previousLeftDown=false;
+        var autoCalibrationTimer=new System.Windows.Forms.Timer { Interval=75 };
+        autoCalibrationTimer.Tick+=(_,_)=>{
+            bool down=(GetAsyncKeyState(0x01)&0x8000)!=0;
+            bool justPressed=down&&!previousLeftDown;
+            previousLeftDown=down;
+            if(!justPressed||!hoverSelection.Checked)return;
+            string feature=morphFeature.SelectedItem?.ToString()??"";
+            if(string.IsNullOrEmpty(feature)||completedFeatures.Contains(feature))return;
+            using var game=Process.GetProcesses().FirstOrDefault(x=>(x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&x.MainWindowHandle==GetForegroundWindow());
+            if(game==null||!GetWindowRect(game.MainWindowHandle,out var rect)||!GetCursorPos(out var cursor))return;
+            if(cursor.X<rect.Left||cursor.X>=rect.Right||cursor.Y<rect.Top||cursor.Y>=rect.Bottom)return;
+            morphCalibration.Calibrate(feature,new Point(cursor.X-rect.Left,cursor.Y-rect.Top));
+            morphStatus.Text=feature+" calibrated from CAS click. Confirm you clicked the correct facial region.";
         };
+        autoCalibrationTimer.Start();
+        page.Disposed+=(_,_)=>autoCalibrationTimer.Dispose();
         var autoMorph = new Button { Text="Auto Morph Selected Feature",AutoSize=true };
         autoMorph.Click+=async (_,_)=>{
             if(string.IsNullOrEmpty(selectedPhoto)){morphStatus.Text="Import a reference photograph first.";return;}
@@ -347,7 +353,7 @@ sealed class StudioWindow : Form {
             finally{if(output!=null&&File.Exists(output))try{File.Delete(output);}catch{} if(capturedPath!=null&&File.Exists(capturedPath))try{File.Delete(capturedPath);}catch{} autoMorph.Enabled=true;}
         };
         Caption(p,"Assisted Auto Face Morph — only the selected facial feature is adjusted");
-        p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);p.Controls.Add(calibrateFeature);
+        p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
         p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);p.Controls.Add(completedStatus);p.Controls.Add(resetCompleted);
