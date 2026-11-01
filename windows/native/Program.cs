@@ -622,7 +622,7 @@ sealed class StudioWindow : Form {
         detect.Click+=(_,_)=>{
             try {
                 var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();
-                status.Text=games.Length>0?"The Sims 4 detected. Build Mode not verified.":"The Sims 4 not detected.";
+                status.Text=games.Length>0?"The Sims 4 detected (process only). Click Check Build/Buy Mode to verify the interface.":"The Sims 4 not detected.";
                 foreach(var game in games)game.Dispose();
             }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
         };
@@ -650,7 +650,7 @@ sealed class StudioWindow : Form {
             finally{calibrate.Enabled=true;}
         };
         verify.Click+=async (_,_)=>{
-            if(!File.Exists(calibrationFile)){status.Text="Calibrate while in Build/Buy Mode first.";return;}
+            if(!File.Exists(calibrationFile)){status.Text="Import a Build/Buy reference screenshot first.";return;}
             calibrate.Enabled=false;verify.Enabled=false;
             status.Text="Checking visible Build/Buy interface...";
             try {
@@ -660,8 +660,8 @@ sealed class StudioWindow : Form {
                     return BuildUiSimilarity(reference,current);
                 }).WaitAsync(TimeSpan.FromSeconds(15));
                 status.Text=score>=0.87
-                    ? "Build/Buy interface visually resembles reference ("+score.ToString("P0")+" visual match; not game-API verified)."
-                    : "Build/Buy interface not verified ("+score.ToString("P0")+" match). Check mode and recalibrate if needed.";
+                    ? "Build/Buy visual check passed ("+score.ToString("P0")+" match). Not game-API verified."
+                    : "Build/Buy visual check failed ("+score.ToString("P0")+" match; 87% required). Use a reference from the same display resolution/UI scale, with the same Build/Buy catalog layout. Camera/lot changes can cause false failures.";
             }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
             finally{calibrate.Enabled=true;verify.Enabled=true;}
         };
@@ -718,7 +718,7 @@ sealed class StudioWindow : Form {
         connectionMonitor.Tick+=(_,_)=>{
             if(status.IsDisposed || tabs.SelectedTab != page)return;
             if(status.Text.StartsWith("The Sims 4") || status.Text.StartsWith("Checking") || status.Text.StartsWith("Sims 4"))
-                status.Text=SimsRunning()?"The Sims 4 process connected. Build/Buy mode not verified.":"The Sims 4 is not running.";
+                status.Text=SimsRunning()?"The Sims 4 running. Build/Buy verification requires a reference and mode check.":"The Sims 4 is not running.";
         };
         connectionMonitor.Start();
         page.Disposed+=(_,_)=>connectionMonitor.Dispose();
