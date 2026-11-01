@@ -196,6 +196,33 @@ sealed class StudioWindow : Form {
         morphFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","cheeks","mouth_lips","chin_jaw","forehead"});
         morphFeature.SelectedIndex=0;
         var completedFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Preview hit regions are approximate until landmark-driven hit testing is available.
+        // Restrict hit testing to the displayed image (PictureBox Zoom letterboxing).
+        string? PreviewFeature(Point location) {
+            if(preview.Image==null)return null;
+            double scale=Math.Min((double)preview.ClientSize.Width/preview.Image.Width,
+                                  (double)preview.ClientSize.Height/preview.Image.Height);
+            double w=preview.Image.Width*scale,h=preview.Image.Height*scale;
+            double x=(location.X-(preview.ClientSize.Width-w)/2)/w;
+            double y=(location.Y-(preview.ClientSize.Height-h)/2)/h;
+            if(x<0||x>1||y<0||y>1)return null;
+            // Central face region; do not select hair, clothing, or background.
+            if(x<.25||x>.75||y<.12||y>.88)return null;
+            if(y<.29)return "forehead";
+            if(y<.39)return "eyebrows";
+            if(y<.50)return "eyes";
+            if(y<.67)return Math.Abs(x-.5)<.115?"nose":"cheeks";
+            if(y<.76)return "mouth_lips";
+            return "chin_jaw";
+        }
+        void SelectPreviewFeature(Point point) {
+            var feature=PreviewFeature(point);
+            if(feature==null||completedFeatures.Contains(feature))return;
+            if(!string.Equals(morphFeature.SelectedItem?.ToString(),feature,StringComparison.OrdinalIgnoreCase))
+                morphFeature.SelectedItem=feature;
+        }
+        preview.MouseMove+=(_,e)=>SelectPreviewFeature(e.Location);
+        preview.MouseClick+=(_,e)=>SelectPreviewFeature(e.Location);
         var completedStatus = new Label { Text="Completed features: none",AutoSize=true,ForeColor=Color.White };
         var resetCompleted = new Button { Text="Reset Completed Features (New Sim)",AutoSize=true };
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
