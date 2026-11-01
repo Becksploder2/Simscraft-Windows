@@ -506,20 +506,28 @@ sealed class StudioWindow : Form {
             return image;
         } catch {image.Dispose();throw;}
     }
-    // Compare the stable lower-left Build/Buy toolbar region, not the changing lot view.
+    // UI-only heuristic: compare several stable toolbar patches, never the changing lot.
+    // This is not a verified game state; low confidence must block construction.
     static double BuildUiSimilarity(Bitmap a,Bitmap b) {
         if(Math.Abs((double)a.Width/a.Height-(double)b.Width/b.Height)>0.08)return 0;
-        double difference=0;
-        const int nx=32,ny=14;
-        for(int y=0;y<ny;y++)for(int x=0;x<nx;x++){
-            int ax=Math.Clamp((int)((0.02+0.42*(x+0.5)/nx)*a.Width),0,a.Width-1);
-            int bx=Math.Clamp((int)((0.02+0.42*(x+0.5)/nx)*b.Width),0,b.Width-1);
-            int ay=Math.Clamp((int)((0.79+0.19*(y+0.5)/ny)*a.Height),0,a.Height-1);
-            int by=Math.Clamp((int)((0.79+0.19*(y+0.5)/ny)*b.Height),0,b.Height-1);
-            var ca=a.GetPixel(ax,ay);var cb=b.GetPixel(bx,by);
-            difference+=(Math.Abs(ca.R-cb.R)+Math.Abs(ca.G-cb.G)+Math.Abs(ca.B-cb.B))/3.0;
+        static double Patch(Bitmap a,Bitmap b,double x0,double y0,double w,double h) {
+            double diff=0; const int nx=24,ny=10;
+            for(int y=0;y<ny;y++)for(int x=0;x<nx;x++){
+                int ax=Math.Clamp((int)((x0+w*(x+0.5)/nx)*a.Width),0,a.Width-1);
+                int bx=Math.Clamp((int)((x0+w*(x+0.5)/nx)*b.Width),0,b.Width-1);
+                int ay=Math.Clamp((int)((y0+h*(y+0.5)/ny)*a.Height),0,a.Height-1);
+                int by=Math.Clamp((int)((y0+h*(y+0.5)/ny)*b.Height),0,b.Height-1);
+                var ca=a.GetPixel(ax,ay);var cb=b.GetPixel(bx,by);
+                diff+=(Math.Abs(ca.R-cb.R)+Math.Abs(ca.G-cb.G)+Math.Abs(ca.B-cb.B))/3.0;
+            }
+            return Math.Max(0,1-diff/(nx*ny*255));
         }
-        return Math.Max(0,1-difference/(nx*ny*255));
+        // Lower left catalog controls, bottom bar, and lower right controls.
+        double left=Patch(a,b,.02,.82,.35,.16);
+        double bottom=Patch(a,b,.38,.91,.23,.07);
+        double right=Patch(a,b,.72,.84,.26,.14);
+        // Require more than one region to agree. Do not average a mismatch away.
+        return Math.Min(left,Math.Max(bottom,right));
     }
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
@@ -576,8 +584,8 @@ sealed class StudioWindow : Form {
                     return BuildUiSimilarity(reference,current);
                 }).WaitAsync(TimeSpan.FromSeconds(15));
                 status.Text=score>=0.87
-                    ? "Build/Buy toolbar likely detected ("+score.ToString("P0")+" visual match; not game-API verified)."
-                    : "Build/Buy toolbar not confirmed ("+score.ToString("P0")+" match). Check mode and recalibrate if needed.";
+                    ? "Build/Buy interface visually resembles reference ("+score.ToString("P0")+" visual match; not game-API verified)."
+                    : "Build/Buy interface not verified ("+score.ToString("P0")+" match). Check mode and recalibrate if needed.";
             }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
             finally{calibrate.Enabled=true;verify.Enabled=true;}
         };
