@@ -225,6 +225,13 @@ sealed class StudioWindow : Form {
         preview.MouseMove+=(_,e)=>SelectPreviewFeature(e.Location);
         preview.MouseClick+=(_,e)=>SelectPreviewFeature(e.Location);
         var completedStatus = new Label { Text="Completed features: none",AutoSize=true,ForeColor=Color.White };
+        var morphProgressLabel=new Label { Text="Face Morph Progress: 0 / 7 (0%)",AutoSize=true,ForeColor=Color.White,Font=new Font("Segoe UI",11,FontStyle.Bold) };
+        var morphProgressBar=new ProgressBar { Minimum=0,Maximum=7,Value=0,Width=330,Height=22,Style=ProgressBarStyle.Continuous };
+        void UpdateMorphProgress() {
+            int count=Math.Min(7,completedFeatures.Count);
+            morphProgressBar.Value=count;
+            morphProgressLabel.Text="Face Morph Progress: "+count+" / 7 ("+(count*100/7)+"%)";
+        }
         var resetCompleted = new Button { Text="Reset Completed Features (New Sim)",AutoSize=true };
         var morphScaleX = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
         var morphScaleY = new NumericUpDown { Minimum=-5000,Maximum=5000,Value=500,Width=100 };
@@ -232,7 +239,7 @@ sealed class StudioWindow : Form {
         // Hover selection shares the same calibrated points as Auto Morph; no second coordinate store.
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
-        resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";hoverStatus.Text="All features available again.";};
+        resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";UpdateMorphProgress();hoverStatus.Text="All features available again.";};
         var hoverTimer = new System.Windows.Forms.Timer { Interval=75 };
         string lastHoverFeature="";
         string hoverCandidate="";
@@ -360,6 +367,7 @@ sealed class StudioWindow : Form {
                     // Keep the feature selected in Simscraft after the drag.
                     morphFeature.SelectedItem=step.Feature;
                     completedStatus.Text="Completed features: "+string.Join(", ",completedFeatures.OrderBy(x=>x));
+                    UpdateMorphProgress();
                     lastHoverFeature=step.Feature;hoverCandidate="";hoverCandidateTicks=0;
                     morphStatus.Text="Applied "+applied+"/"+steps.Count+" features. Review results before another pass.";
                     await System.Threading.Tasks.Task.Delay(250);
@@ -371,7 +379,7 @@ sealed class StudioWindow : Form {
         p.Controls.Add(hoverSelection);p.Controls.Add(hoverStatus);p.Controls.Add(morphFeature);
         Caption(p,"Sensitivity: horizontal / vertical (signed; tune for your CAS camera)");
         p.Controls.Add(morphScaleX);p.Controls.Add(morphScaleY);
-        p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);p.Controls.Add(completedStatus);p.Controls.Add(resetCompleted);
+        p.Controls.Add(autoMorph);p.Controls.Add(morphStatus);p.Controls.Add(morphProgressLabel);p.Controls.Add(morphProgressBar);p.Controls.Add(completedStatus);p.Controls.Add(resetCompleted);
 
         importStatus.TextChanged+=(_,_)=>{if(importStatus.Text=="Photo imported successfully." && !analyze.IsDisposed)analyze.PerformClick();};
         Caption(p,"Template group");p.Controls.Add(gender);Caption(p,"Template selection (automatic matching pending landmark calibration)");p.Controls.Add(template);
