@@ -63,6 +63,7 @@ sealed class StudioWindow : Form {
         } catch { }
         return false;
     }
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -232,7 +233,6 @@ sealed class StudioWindow : Form {
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
         resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";hoverStatus.Text="All features available again.";};
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
         var hoverTimer = new System.Windows.Forms.Timer { Interval=75 };
         string lastHoverFeature="";
         string hoverCandidate="";
