@@ -859,20 +859,33 @@ sealed class StudioWindow : Form {
             constructionState.Text="STOPPED. Construction disarmed. No game input will be sent.";
         };
         arm.Click+=async (_,_)=>{
-            armed=false;
             if(!allowControl.Checked){constructionState.Text="Approve game control first.";return;}
             if(string.IsNullOrWhiteSpace(prompt.Text)){constructionState.Text="Describe the house before arming.";return;}
-
+            if(!SimsRunning()){constructionState.Text="The Sims 4 is not running.";return;}
             arm.Enabled=false;
+            constructionState.Text="Checking Build/Buy without hiding or resetting Simscraft...";
             try {
-                using var current=await CaptureSimsUnobstructedAsync();
+                // Do not Hide()/Show() the main window during ARM: that can
+                // recreate the visible form and appear to reset the workspace.
+                // A blocked capture is a recoverable preflight failure.
+                if(ContainsSimsWindowOcclusion()) {
+                    constructionState.Text="Move Simscraft off the Sims 4 window, then click ARM again. No reset or game input.";
+                    return;
+                }
+                using var current=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
                 var detection=InspectBuildBuyUi(current);
-                if(!detection.Likely){constructionState.Text="Not armed: Build/Buy catalog not confidently recognized ("+detection.Detail+").";return;}
+                if(!detection.Likely) {
+                    constructionState.Text="Not armed: Build/Buy not confirmed ("+detection.Detail+").";
+                    return;
+                }
                 armed=true;
-                constructionState.Text="Build/Buy appears active ("+detection.Detail+"). Armed for an explicitly confirmed 4x4 wall test only.";
-            }catch(OperationCanceledException){constructionState.Text="STOPPED.";}
-             catch(Exception ex){constructionState.Text="Cannot arm: "+ex.Message;}
-            finally{arm.Enabled=true;}
+                constructionState.Text="ARMED. Build/Buy detected. Calibrate the grid and confirm Wall Tool before running the 4x4 test.";
+            } catch(Exception ex) {
+                armed=false;
+                constructionState.Text="ARM failed safely: "+ex.Message;
+            } finally {
+                if(!arm.IsDisposed)arm.Enabled=true;
+            }
         };
         p.Controls.Add(allowControl);p.Controls.Add(arm);p.Controls.Add(stop);p.Controls.Add(constructionState);
         page.Disposed+=(_,_)=>constructionCancel.Dispose();
