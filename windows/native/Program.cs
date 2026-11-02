@@ -642,6 +642,36 @@ sealed class StudioWindow : Form {
             if(visible) { Show();Activate(); }
         }
     }
+    // Reference-free, conservative visual heuristic for the expanded Build/Buy
+    // catalog. It does not claim to identify individual Sims UI controls.
+    static (bool Likely,double Score,string Detail) InspectBuildBuyUi(Bitmap image) {
+        // Bottom catalog should contain a dense band of icons/edges, unlike the lot.
+        static double EdgeDensity(Bitmap bmp,double x0,double y0,double w,double h) {
+            const int nx=72,ny=20;
+            double[,] lum=new double[ny,nx];
+            for(int y=0;y<ny;y++)for(int x=0;x<nx;x++) {
+                int px=Math.Clamp((int)((x0+w*(x+.5)/nx)*bmp.Width),0,bmp.Width-1);
+                int py=Math.Clamp((int)((y0+h*(y+.5)/ny)*bmp.Height),0,bmp.Height-1);
+                var c=bmp.GetPixel(px,py);
+                lum[y,x]=.2126*c.R+.7152*c.G+.0722*c.B;
+            }
+            int edges=0,total=0;
+            for(int y=1;y<ny-1;y++)for(int x=1;x<nx-1;x++) {
+                double d=Math.Abs(lum[y,x+1]-lum[y,x-1])+Math.Abs(lum[y+1,x]-lum[y-1,x]);
+                if(d>55)edges++;
+                total++;
+            }
+            return (double)edges/total;
+        }
+        double bottom=EdgeDensity(image,.05,.79,.90,.18);
+        double middle=EdgeDensity(image,.20,.36,.60,.30);
+        double left=EdgeDensity(image,.02,.82,.32,.15);
+        double right=EdgeDensity(image,.72,.82,.26,.15);
+        // A visual indication only: do not authorize automated input on this alone.
+        bool likely=bottom>.105 && left>.065 && right>.065 && bottom>middle*.70;
+        double score=Math.Clamp(bottom/.22,0,1);
+        return (likely,score,"catalog "+bottom.ToString("P0")+", left "+left.ToString("P0")+", right "+right.ToString("P0")+", lot "+middle.ToString("P0"));
+    }
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
         Caption(p,"Buildcraft — Sims 4 Build Mode workspace (early prototype)");
@@ -664,65 +694,25 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
         };
         p.Controls.Add(detect);p.Controls.Add(status);
-        var calibrationFile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Simcraft Studio","Buildcraft-BuildBuy-Reference.png");
-        var calibrate=new Button { Text="Calibrate Build/Buy (capture while in Build Mode)",AutoSize=true };
-        var verify=new Button { Text="Check Build/Buy Mode",AutoSize=true };
-        calibrate.Text="Import Build/Buy reference screenshot";
-        calibrate.Click+=async (_,_)=>{
-            calibrate.Enabled=false;
-            status.Text="Opening Build/Buy screenshot picker...";
+        var verify=new Button { Text="Check Build/Buy now",AutoSize=true };
+        async System.Threading.Tasks.Task CheckBuildModeAsync() {
+            if(!SimsRunning()) { status.Text="The Sims 4 is not running.";return; }
             try {
-                var file=await PickScreenshotAsync();
-                if(file==null){status.Text="Reference selection canceled.";return;}
-                await System.Threading.Tasks.Task.Run(()=>{
-                    using var source=new Bitmap(file);
-                    if(source.Width>8192||source.Height>8192||((long)source.Width*source.Height)>30_000_000)
-                        throw new InvalidDataException("Screenshot is too large.");
-                    Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
-                    source.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
-                }).WaitAsync(TimeSpan.FromSeconds(15));
-                status.Text="Build/Buy reference imported. Ready to check mode.";
-            }catch(TimeoutException){status.Text="Screenshot picker or loading timed out. App remains responsive.";}
-             catch(Exception ex){status.Text="Reference import failed: "+ex.Message;}
-            finally{calibrate.Enabled=true;}
-        };
-        verify.Click+=async (_,_)=>{
-            if(!File.Exists(calibrationFile)){status.Text="Import a Build/Buy reference screenshot first.";return;}
-            calibrate.Enabled=false;verify.Enabled=false;
-            status.Text="Checking visible Build/Buy interface...";
-            try {
-                using var reference=new Bitmap(calibrationFile);
                 using var current=await CaptureSimsUnobstructedAsync();
-                double aspectDelta=Math.Abs((double)reference.Width/reference.Height-(double)current.Width/current.Height);
-                double score=BuildUiSimilarity(reference,current);
-                var diagnostic=(score,aspectDelta,refSize:reference.Size,gameSize:current.Size);
-                string sizes="Reference "+diagnostic.refSize.Width+"x"+diagnostic.refSize.Height+
-                    "; game capture "+diagnostic.gameSize.Width+"x"+diagnostic.gameSize.Height+". ";
-                status.Text=diagnostic.aspectDelta>0.08
-                    ? "Build/Buy check blocked: screenshot shapes differ (aspect delta "+
-                        diagnostic.aspectDelta.ToString("F3")+"). "+sizes+
-                        "Window borders or a desktop screenshot may be included. Capture just the Sims game window."
-                    : diagnostic.score>=0.87
-                    ? "Build/Buy visual check passed ("+diagnostic.score.ToString("P0")+" match). "+sizes+"Not game-API verified."
-                    : "Build/Buy structural UI check failed ("+diagnostic.score.ToString("P0")+
-                        " match; 87% required). "+sizes+
-                        "Check the visible catalog, UI scale, and whether Simscraft covered the game during capture.";
-            }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
-            finally{calibrate.Enabled=true;verify.Enabled=true;}
+                var detection=InspectBuildBuyUi(current);
+                status.Text=detection.Likely
+                    ? "Build/Buy interface likely detected automatically ("+detection.Detail+"). Visual estimate only."
+                    : "Sims 4 detected; Build/Buy catalog not confidently recognized ("+detection.Detail+"). Open the Build/Buy catalog.";
+            } catch(Exception ex) { status.Text="Automatic Build/Buy check failed: "+ex.Message; }
+        }
+        bool checkingMode=false;
+        verify.Click+=async (_,_)=>{
+            if(checkingMode)return;
+            checkingMode=true;verify.Enabled=false;
+            try { await CheckBuildModeAsync(); }
+            finally { checkingMode=false;verify.Enabled=true; }
         };
-        var buildDrop=new Label { Text="Or drop Build/Buy reference screenshot here (no file picker)",AutoSize=false,Width=570,Height=50,BorderStyle=BorderStyle.FixedSingle,TextAlign=ContentAlignment.MiddleCenter,ForeColor=Color.White };
-        EnableScreenshotDrop(buildDrop,file=>{
-            status.Text="Importing dropped reference...";
-            _=System.Threading.Tasks.Task.Run(()=>{
-                using var image=new Bitmap(file);
-                if(image.Width>8192||image.Height>8192||((long)image.Width*image.Height)>30_000_000)throw new InvalidDataException("Image too large.");
-                Directory.CreateDirectory(Path.GetDirectoryName(calibrationFile)!);
-                image.Save(calibrationFile,System.Drawing.Imaging.ImageFormat.Png);
-            }).ContinueWith(t=>{
-                if(!status.IsDisposed)status.Text=t.IsFaulted?"Reference import failed: "+t.Exception?.GetBaseException().Message:"Build/Buy reference imported.";
-            },System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
-        });
-        p.Controls.Add(calibrate);p.Controls.Add(buildDrop);p.Controls.Add(verify);
+        p.Controls.Add(verify);
         Caption(p,"Construction controller — safety-first preview");
         var constructionState=new Label { Text="Idle. No game input authorized.",AutoSize=true,ForeColor=Color.White };
         var allowControl=new CheckBox { Text="I approve Buildcraft controlling The Sims 4 after verification",AutoSize=true,ForeColor=Color.White };
@@ -742,15 +732,14 @@ sealed class StudioWindow : Form {
             armed=false;
             if(!allowControl.Checked){constructionState.Text="Approve game control first.";return;}
             if(string.IsNullOrWhiteSpace(prompt.Text)){constructionState.Text="Describe the house before arming.";return;}
-            if(!File.Exists(calibrationFile)){constructionState.Text="Calibrate Build/Buy mode first.";return;}
+
             arm.Enabled=false;
             try {
-                using var reference=new Bitmap(calibrationFile);
                 using var current=await CaptureSimsUnobstructedAsync();
-                var score=BuildUiSimilarity(reference,current);
-                if(score<0.87){constructionState.Text="Not armed: Build/Buy interface unconfirmed ("+score.ToString("P0")+").";return;}
+                var detection=InspectBuildBuyUi(current);
+                if(!detection.Likely){constructionState.Text="Not armed: Build/Buy catalog not confidently recognized ("+detection.Detail+").";return;}
                 armed=true;
-                constructionState.Text="Build/Buy visually matched ("+score.ToString("P0")+"). Controller armed in DRY RUN only. Automatic wall placement is not implemented.";
+                constructionState.Text="Build/Buy appears active ("+detection.Detail+"). DRY RUN only; no game input is authorized.";
             }catch(OperationCanceledException){constructionState.Text="STOPPED.";}
              catch(Exception ex){constructionState.Text="Cannot arm: "+ex.Message;}
             finally{arm.Enabled=true;}
