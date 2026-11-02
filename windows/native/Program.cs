@@ -644,9 +644,23 @@ sealed class StudioWindow : Form {
         }
     }
     bool ContainsSimsWindowOcclusion() {
-        // If Simscraft is foreground, screen capture may contain our own UI.
-        // Fail closed instead of flickering the window or reporting a false match.
-        return GetForegroundWindow()==Handle;
+        // Clicking ARM necessarily makes Simscraft foreground. Foreground focus
+        // does NOT mean its window overlaps the Sims capture rectangle.
+        // Check actual screen geometry, including multi-monitor coordinates.
+        if(!Visible || WindowState==FormWindowState.Minimized)return false;
+        var studioBounds=RectangleToScreen(ClientRectangle);
+        var games=Process.GetProcesses().Where(x=>
+            x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
+            x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();
+        try {
+            foreach(var game in games) {
+                if(game.MainWindowHandle==IntPtr.Zero || !GetWindowRect(game.MainWindowHandle,out var rect))continue;
+                var gameBounds=Rectangle.FromLTRB(rect.Left,rect.Top,rect.Right,rect.Bottom);
+                if(gameBounds.Width>=300 && gameBounds.Height>=300 &&
+                   studioBounds.IntersectsWith(gameBounds))return true;
+            }
+            return false;
+        } finally { foreach(var game in games)game.Dispose(); }
     }
     // Reference-free, conservative visual heuristic for the expanded Build/Buy
     // catalog. It does not claim to identify individual Sims UI controls.
@@ -869,7 +883,7 @@ sealed class StudioWindow : Form {
                 // recreate the visible form and appear to reset the workspace.
                 // A blocked capture is a recoverable preflight failure.
                 if(ContainsSimsWindowOcclusion()) {
-                    constructionState.Text="Move Simscraft off the Sims 4 window, then click ARM again. No reset or game input.";
+                    constructionState.Text="Simscraft overlaps the Sims 4 capture rectangle. Move the windows apart, then retry ARM.";
                     return;
                 }
                 using var current=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
