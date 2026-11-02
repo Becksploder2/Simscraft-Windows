@@ -677,6 +677,42 @@ sealed class StudioWindow : Form {
         double score=Math.Clamp(bottom/.22,0,1);
         return (likely,score,"catalog "+bottom.ToString("P0")+", left "+left.ToString("P0")+", right "+right.ToString("P0")+", lot "+middle.ToString("P0"));
     }
+    // Experimental periodicity estimate. It does not identify the lot origin.
+    static (bool Found,int StepX,int StepY,double Confidence) EstimateLotGrid(Bitmap source) {
+        const int n=192;
+        var horizontal=new double[n];
+        var vertical=new double[n];
+        var light=new double[n,n];
+        for(int y=0;y<n;y++)for(int x=0;x<n;x++) {
+            int sx=Math.Clamp((int)(source.Width*(.20+.60*(x+.5)/n)),0,source.Width-1);
+            int sy=Math.Clamp((int)(source.Height*(.18+.56*(y+.5)/n)),0,source.Height-1);
+            var c=source.GetPixel(sx,sy);
+            light[y,x]=.2126*c.R+.7152*c.G+.0722*c.B;
+        }
+        for(int y=1;y<n-1;y++)for(int x=1;x<n-1;x++) {
+            horizontal[x]+=Math.Abs(light[y,x+1]-light[y,x-1]);
+            vertical[y]+=Math.Abs(light[y+1,x]-light[y-1,x]);
+        }
+        static (int Lag,double Score) Period(double[] p) {
+            double mean=p.Average(),best=0;
+            int lagBest=0;
+            for(int lag=8;lag<=48;lag++) {
+                double dot=0,a=0,b=0;
+                for(int i=0;i<p.Length-lag;i++) {
+                    double u=p[i]-mean,v=p[i+lag]-mean;
+                    dot+=u*v;a+=u*u;b+=v*v;
+                }
+                double score=dot/Math.Sqrt(Math.Max(1e-8,a*b));
+                if(score>best){best=score;lagBest=lag;}
+            }
+            return (lagBest,best);
+        }
+        var px=Period(horizontal);var py=Period(vertical);
+        double confidence=Math.Min(px.Score,py.Score);
+        int dx=(int)Math.Round(px.Lag*source.Width*.60/n);
+        int dy=(int)Math.Round(py.Lag*source.Height*.56/n);
+        return (confidence>=.72&&dx>=6&&dy>=6,dx,dy,confidence);
+    }
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
         Caption(p,"Buildcraft — Sims 4 Build Mode workspace (early prototype)");
@@ -780,6 +816,38 @@ sealed class StudioWindow : Form {
         bool collectingGrid=false,gridMouseWasDown=false;
         System.Drawing.Point gridOrigin=default,gridWidthStep=default,gridDepthStep=default;
         bool gridReady=false;
+        var autoGrid=new Button { Text="Auto-Calibrate Lot (experimental)",AutoSize=true };
+        autoGrid.Click+=async (_,_)=>{
+            if(!SimsRunning()){gridStatus.Text="The Sims 4 is not running.";return;}
+            autoGrid.Enabled=false;gridReady=false;
+            try {
+                gridStatus.Text="Switch to Sims 4 within 8 seconds for automatic grid analysis.";
+                bool focused=false;
+                for(int i=0;i<40;i++) {
+                    if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException();
+                    using var game=Process.GetProcesses().FirstOrDefault(x=>
+                        (x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||
+                         x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&
+                        x.MainWindowHandle==GetForegroundWindow());
+                    if(game!=null){focused=true;break;}
+                    await System.Threading.Tasks.Task.Delay(200);
+                }
+                if(!focused)throw new InvalidOperationException("Sims 4 was not focused in time.");
+                using var screenshot=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
+                var estimate=await System.Threading.Tasks.Task.Run(()=>EstimateLotGrid(screenshot));
+                if(!estimate.Found) {
+                    gridStatus.Text="Grid estimate uncertain ("+estimate.Confidence.ToString("P0")+"). No construction authorized.";
+                    gridPreview.Text="Use a visible grid on an empty lot, or use manual three-click calibration.";
+                } else {
+                    gridStatus.Text="Possible grid spacing detected ("+estimate.Confidence.ToString("P0")+"). Lot origin still unverified.";
+                    gridPreview.Text="Estimated X spacing: "+estimate.StepX+" px; Y spacing: "+estimate.StepY+
+                        " px. Auto-detection does not yet determine the tile origin; live construction stays locked.";
+                }
+            }catch(OperationCanceledException){gridStatus.Text="Auto-calibration canceled.";}
+             catch(Exception ex){gridStatus.Text="Auto-calibration failed: "+ex.Message;}
+            finally{autoGrid.Enabled=true;}
+        };
+        p.Controls.Add(autoGrid);
         var gridTimer=new System.Windows.Forms.Timer { Interval=40 };
         startGrid.Click+=(_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 before calibrating.";return;}
