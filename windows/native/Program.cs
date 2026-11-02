@@ -584,26 +584,36 @@ sealed class StudioWindow : Form {
     }
     // UI-only heuristic: compare several stable toolbar patches, never the changing lot.
     // This is not a verified game state; low confidence must block construction.
+    // Compare edge/structure signatures in Build/Buy UI regions, not lot colors.
+    // Still a visual heuristic; construction must remain dry-run until validated.
     static double BuildUiSimilarity(Bitmap a,Bitmap b) {
         if(Math.Abs((double)a.Width/a.Height-(double)b.Width/b.Height)>0.08)return 0;
         static double Patch(Bitmap a,Bitmap b,double x0,double y0,double w,double h) {
-            double diff=0; const int nx=24,ny=10;
+            const int nx=48,ny=18;
+            double[,] aa=new double[ny,nx],bb=new double[ny,nx];
             for(int y=0;y<ny;y++)for(int x=0;x<nx;x++){
-                int ax=Math.Clamp((int)((x0+w*(x+0.5)/nx)*a.Width),0,a.Width-1);
-                int bx=Math.Clamp((int)((x0+w*(x+0.5)/nx)*b.Width),0,b.Width-1);
-                int ay=Math.Clamp((int)((y0+h*(y+0.5)/ny)*a.Height),0,a.Height-1);
-                int by=Math.Clamp((int)((y0+h*(y+0.5)/ny)*b.Height),0,b.Height-1);
+                double u=x0+w*(x+.5)/nx,v=y0+h*(y+.5)/ny;
+                int ax=Math.Clamp((int)(u*a.Width),0,a.Width-1),ay=Math.Clamp((int)(v*a.Height),0,a.Height-1);
+                int bx=Math.Clamp((int)(u*b.Width),0,b.Width-1),by=Math.Clamp((int)(v*b.Height),0,b.Height-1);
                 var ca=a.GetPixel(ax,ay);var cb=b.GetPixel(bx,by);
-                diff+=(Math.Abs(ca.R-cb.R)+Math.Abs(ca.G-cb.G)+Math.Abs(ca.B-cb.B))/3.0;
+                aa[y,x]=.2126*ca.R+.7152*ca.G+.0722*ca.B;
+                bb[y,x]=.2126*cb.R+.7152*cb.G+.0722*cb.B;
             }
-            return Math.Max(0,1-diff/(nx*ny*255));
+            double difference=0,activity=0;
+            for(int y=1;y<ny-1;y++)for(int x=1;x<nx-1;x++){
+                double ea=Math.Abs(aa[y,x+1]-aa[y,x-1])+Math.Abs(aa[y+1,x]-aa[y-1,x]);
+                double eb=Math.Abs(bb[y,x+1]-bb[y,x-1])+Math.Abs(bb[y+1,x]-bb[y-1,x]);
+                difference+=Math.Abs(ea-eb);
+                activity+=Math.Max(ea,eb);
+            }
+            // Avoid treating two featureless patches as a verified interface.
+            if(activity<1000)return 0;
+            return Math.Clamp(1-difference/activity,0,1);
         }
-        // Lower left catalog controls, bottom bar, and lower right controls.
         double left=Patch(a,b,.02,.82,.35,.16);
-        double bottom=Patch(a,b,.38,.91,.23,.07);
+        double center=Patch(a,b,.38,.91,.23,.07);
         double right=Patch(a,b,.72,.84,.26,.14);
-        // Require more than one region to agree. Do not average a mismatch away.
-        return Math.Min(left,Math.Max(bottom,right));
+        return Math.Min(left,Math.Max(center,right));
     }
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
@@ -669,7 +679,7 @@ sealed class StudioWindow : Form {
                         "Window borders or a desktop screenshot may be included. Capture just the Sims game window."
                     : diagnostic.score>=0.87
                     ? "Build/Buy visual check passed ("+diagnostic.score.ToString("P0")+" match). "+sizes+"Not game-API verified."
-                    : "Build/Buy visual check failed ("+diagnostic.score.ToString("P0")+
+                    : "Build/Buy structural UI check failed ("+diagnostic.score.ToString("P0")+
                         " match; 87% required). "+sizes+
                         "Check the visible catalog, UI scale, and whether Simscraft covered the game during capture.";
             }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
