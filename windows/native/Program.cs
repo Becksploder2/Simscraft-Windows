@@ -654,14 +654,24 @@ sealed class StudioWindow : Form {
             calibrate.Enabled=false;verify.Enabled=false;
             status.Text="Checking visible Build/Buy interface...";
             try {
-                var score=await System.Threading.Tasks.Task.Run(()=>{
+                var diagnostic=await System.Threading.Tasks.Task.Run(()=>{
                     using var reference=new Bitmap(calibrationFile);
                     using var current=CaptureSimsWindow();
-                    return BuildUiSimilarity(reference,current);
+                    double aspectDelta=Math.Abs((double)reference.Width/reference.Height-(double)current.Width/current.Height);
+                    double score=BuildUiSimilarity(reference,current);
+                    return (score,aspectDelta,refSize=reference.Size,gameSize=current.Size);
                 }).WaitAsync(TimeSpan.FromSeconds(15));
-                status.Text=score>=0.87
-                    ? "Build/Buy visual check passed ("+score.ToString("P0")+" match). Not game-API verified."
-                    : "Build/Buy visual check failed ("+score.ToString("P0")+" match; 87% required). Use a reference from the same display resolution/UI scale, with the same Build/Buy catalog layout. Camera/lot changes can cause false failures.";
+                string sizes="Reference "+diagnostic.refSize.Width+"x"+diagnostic.refSize.Height+
+                    "; game capture "+diagnostic.gameSize.Width+"x"+diagnostic.gameSize.Height+". ";
+                status.Text=diagnostic.aspectDelta>0.08
+                    ? "Build/Buy check blocked: screenshot shapes differ (aspect delta "+
+                        diagnostic.aspectDelta.ToString("F3")+"). "+sizes+
+                        "Window borders or a desktop screenshot may be included. Capture just the Sims game window."
+                    : diagnostic.score>=0.87
+                    ? "Build/Buy visual check passed ("+diagnostic.score.ToString("P0")+" match). "+sizes+"Not game-API verified."
+                    : "Build/Buy visual check failed ("+diagnostic.score.ToString("P0")+
+                        " match; 87% required). "+sizes+
+                        "Check the visible catalog, UI scale, and whether Simscraft covered the game during capture.";
             }catch(Exception ex){status.Text="Mode check failed: "+ex.Message;}
             finally{calibrate.Enabled=true;verify.Enabled=true;}
         };
