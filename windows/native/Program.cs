@@ -464,7 +464,7 @@ sealed class StudioWindow : Form {
                 if(!File.Exists(casReference))throw new InvalidOperationException("Set CAS reference screenshot first.");
                 double similarity=await System.Threading.Tasks.Task.Run(()=>{
                     using var reference=new Bitmap(casReference);
-                    using var current=CaptureSimsWindow();
+                    using var current=await CaptureSimsUnobstructedAsync();
                     return BuildUiSimilarity(reference,current);
                 }).WaitAsync(TimeSpan.FromSeconds(12));
                 casStatus.Text=similarity>=0.87
@@ -633,6 +633,17 @@ sealed class StudioWindow : Form {
         double right=Patch(a,b,.72,.84,.26,.14);
         return Math.Min(left,Math.Max(center,right));
     }
+    // Capture with our own UI hidden so it cannot cover the game's catalog.
+    async System.Threading.Tasks.Task<Bitmap> CaptureSimsUnobstructedAsync() {
+        bool visible=Visible;
+        try {
+            if(visible)Hide();
+            await System.Threading.Tasks.Task.Delay(400);
+            return await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
+        } finally {
+            if(visible) { Show();Activate(); }
+        }
+    }
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
         Caption(p,"Buildcraft — Sims 4 Build Mode workspace (early prototype)");
@@ -682,13 +693,11 @@ sealed class StudioWindow : Form {
             calibrate.Enabled=false;verify.Enabled=false;
             status.Text="Checking visible Build/Buy interface...";
             try {
-                var diagnostic=await System.Threading.Tasks.Task.Run(()=>{
-                    using var reference=new Bitmap(calibrationFile);
-                    using var current=CaptureSimsWindow();
-                    double aspectDelta=Math.Abs((double)reference.Width/reference.Height-(double)current.Width/current.Height);
-                    double score=BuildUiSimilarity(reference,current);
-                    return (score,aspectDelta,refSize: reference.Size,gameSize: current.Size);
-                }).WaitAsync(TimeSpan.FromSeconds(15));
+                using var reference=new Bitmap(calibrationFile);
+                using var current=await CaptureSimsUnobstructedAsync();
+                double aspectDelta=Math.Abs((double)reference.Width/reference.Height-(double)current.Width/current.Height);
+                double score=BuildUiSimilarity(reference,current);
+                var diagnostic=(score,aspectDelta,refSize:reference.Size,gameSize:current.Size);
                 string sizes="Reference "+diagnostic.refSize.Width+"x"+diagnostic.refSize.Height+
                     "; game capture "+diagnostic.gameSize.Width+"x"+diagnostic.gameSize.Height+". ";
                 status.Text=diagnostic.aspectDelta>0.08
@@ -738,11 +747,9 @@ sealed class StudioWindow : Form {
             if(!File.Exists(calibrationFile)){constructionState.Text="Calibrate Build/Buy mode first.";return;}
             arm.Enabled=false;
             try {
-                var score=await System.Threading.Tasks.Task.Run(()=>{
-                    using var reference=new Bitmap(calibrationFile);
-                    using var current=CaptureSimsWindow();
-                    return BuildUiSimilarity(reference,current);
-                }).WaitAsync(TimeSpan.FromSeconds(15),constructionCancel.Token);
+                using var reference=new Bitmap(calibrationFile);
+                using var current=await CaptureSimsUnobstructedAsync();
+                var score=BuildUiSimilarity(reference,current);
                 if(score<0.87){constructionState.Text="Not armed: Build/Buy interface unconfirmed ("+score.ToString("P0")+").";return;}
                 armed=true;
                 constructionState.Text="Build/Buy visually matched ("+score.ToString("P0")+"). Controller armed in DRY RUN only. Automatic wall placement is not implemented.";
