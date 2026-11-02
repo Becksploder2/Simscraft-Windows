@@ -714,9 +714,90 @@ sealed class StudioWindow : Form {
         int dy=(int)Math.Round(py.Lag*source.Height*.56/n);
         return (confidence>=.72&&dx>=6&&dy>=6,dx,dy,confidence);
     }
+
+    void ShowHouseDemo() {
+        using var window=new Form { Text="Simscraft Buildcraft — Full House Blueprint Demo",Width=1050,Height=780,StartPosition=FormStartPosition.CenterParent,BackColor=Color.FromArgb(24,31,48),ForeColor=Color.White };
+        var top=new FlowLayoutPanel { Dock=DockStyle.Top,Height=50,Padding=new Padding(8) };
+        var export=new Button { Text="Export Blueprint PNG",AutoSize=true };
+        var savePlan=new Button { Text="Export Room Plan JSON",AutoSize=true };
+        top.Controls.Add(export);top.Controls.Add(savePlan);
+        window.Controls.Add(top);
+        var note=new Label { Dock=DockStyle.Bottom,Height=46,Text="DEMO PREVIEW — 2 bedrooms, bath, kitchen, living room, dining, hallway, entrance. No Sims 4 game input.",TextAlign=ContentAlignment.MiddleCenter };
+        window.Controls.Add(note);
+        var canvas=new PictureBox { Dock=DockStyle.Fill,BackColor=Color.FromArgb(245,242,231),SizeMode=PictureBoxSizeMode.Zoom };
+        window.Controls.Add(canvas);
+        canvas.BringToFront();
+        var rooms=new (string Name,int X,int Y,int W,int H,Color Color)[] {
+            ("LIVING ROOM",0,0,12,10,Color.FromArgb(204,224,231)),
+            ("KITCHEN",12,0,8,7,Color.FromArgb(242,217,178)),
+            ("DINING",12,7,8,3,Color.FromArgb(233,220,188)),
+            ("HALL",0,10,20,3,Color.FromArgb(226,225,217)),
+            ("BEDROOM 1",0,13,9,9,Color.FromArgb(214,206,232)),
+            ("BATHROOM",9,13,5,9,Color.FromArgb(195,226,219)),
+            ("BEDROOM 2",14,13,6,9,Color.FromArgb(232,208,221))
+        };
+        Bitmap Render() {
+            var bmp=new Bitmap(1000,1080);
+            using var g=Graphics.FromImage(bmp);
+            g.Clear(Color.FromArgb(245,242,231));
+            g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var titleFont=new Font("Segoe UI",22,FontStyle.Bold);
+            using var roomFont=new Font("Segoe UI",12,FontStyle.Bold);
+            using var smallFont=new Font("Segoe UI",10);
+            g.DrawString("SIMSCRAFT  |  BUILDCRAFT",titleFont,Brushes.Black,55,20);
+            g.DrawString("DEMO HOUSE — 20 × 22 tiles  •  1 floor  •  2 bedrooms",smallFont,Brushes.Black,58,66);
+            const int tile=39, left=105, upper=130;
+            foreach(var room in rooms) {
+                var rect=new Rectangle(left+room.X*tile,upper+room.Y*tile,room.W*tile,room.H*tile);
+                using var brush=new SolidBrush(room.Color);
+                g.FillRectangle(brush,rect);
+                using var wallPen=new Pen(Color.FromArgb(42,50,60),8);
+                g.DrawRectangle(wallPen,rect);
+                var labelSize=g.MeasureString(room.Name,roomFont);
+                g.DrawString(room.Name,roomFont,Brushes.Black,rect.X+(rect.Width-labelSize.Width)/2,rect.Y+(rect.Height-labelSize.Height)/2);
+            }
+            using var doorPen=new Pen(Color.White,13);
+            // Diagrammatic door openings, not Sims 4 placement coordinates.
+            g.DrawLine(doorPen,left+5*tile,upper+10*tile,left+7*tile,upper+10*tile);
+            g.DrawLine(doorPen,left+15*tile,upper+10*tile,left+17*tile,upper+10*tile);
+            g.DrawLine(doorPen,left+3*tile,upper+13*tile,left+5*tile,upper+13*tile);
+            g.DrawLine(doorPen,left+10*tile,upper+13*tile,left+12*tile,upper+13*tile);
+            g.DrawLine(doorPen,left+16*tile,upper+13*tile,left+18*tile,upper+13*tile);
+            g.DrawLine(doorPen,left+9*tile,upper+22*tile,left+11*tile,upper+22*tile);
+            g.DrawString("CONCEPT BLUEPRINT — NOT YET BUILT IN THE SIMS 4",smallFont,Brushes.DarkRed,110,1025);
+            return bmp;
+        }
+        var picture=Render();
+        canvas.Image=picture;
+        export.Click+=(_,_)=>{
+            using var dialog=new SaveFileDialog { Filter="PNG image (*.png)|*.png",FileName="simscraft-house-blueprint.png" };
+            if(dialog.ShowDialog(window)==DialogResult.OK) {
+                try { picture.Save(dialog.FileName,System.Drawing.Imaging.ImageFormat.Png); }
+                catch(Exception ex) { MessageBox.Show(window,ex.Message,"Export failed"); }
+            }
+        };
+        savePlan.Click+=(_,_)=>{
+            using var dialog=new SaveFileDialog { Filter="JSON plan (*.json)|*.json",FileName="simscraft-house-plan.json" };
+            if(dialog.ShowDialog(window)==DialogResult.OK) {
+                try {
+                    var plan=new { schema="simscraft-house-demo-v1",lotWidth=20,lotDepth=22,floors=1,
+                        rooms=rooms.Select(r=>new { name=r.Name,x=r.X,y=r.Y,width=r.W,depth=r.H }).ToArray(),
+                        constructionStatus="blueprint-only",gamePlacementVerified=false };
+                    File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(plan,new JsonSerializerOptions { WriteIndented=true }));
+                }catch(Exception ex){MessageBox.Show(window,ex.Message,"Export failed");}
+            }
+        };
+        window.FormClosed+=(_,_)=>picture.Dispose();
+        window.ShowDialog(this);
+    }
+
     void BuildBuildcraftTab(TabPage page) {
         var p=Panel(page);
         Caption(p,"Buildcraft — Sims 4 Build Mode workspace (early prototype)");
+        var demoButton=new Button { Text="DEMO: Generate Full House Blueprint",AutoSize=true,BackColor=Color.FromArgb(45,100,140),ForeColor=Color.White };
+        demoButton.Click+=(_,_)=>ShowHouseDemo();
+        p.Controls.Add(demoButton);
+        Caption(p,"Demo generates a complete multi-room blueprint and PNG export; it does NOT construct the house inside Sims 4.");
         Caption(p,"Describe the building or lot");
         var prompt=new TextBox { Width=760,Height=110,Multiline=true,ScrollBars=ScrollBars.Vertical };
         p.Controls.Add(prompt);
