@@ -642,6 +642,11 @@ sealed class StudioWindow : Form {
             if(visible) { Show();Activate(); }
         }
     }
+    bool ContainsSimsWindowOcclusion() {
+        // If Simscraft is foreground, screen capture may contain our own UI.
+        // Fail closed instead of flickering the window or reporting a false match.
+        return GetForegroundWindow()==Handle;
+    }
     // Reference-free, conservative visual heuristic for the expanded Build/Buy
     // catalog. It does not claim to identify individual Sims UI controls.
     static (bool Likely,double Score,string Detail) InspectBuildBuyUi(Bitmap image) {
@@ -698,7 +703,14 @@ sealed class StudioWindow : Form {
         async System.Threading.Tasks.Task CheckBuildModeAsync() {
             if(!SimsRunning()) { status.Text="The Sims 4 is not running.";return; }
             try {
-                using var current=await CaptureSimsUnobstructedAsync();
+                // Never hide or reactivate the Studio window during background polling.
+                // CopyFromScreen reads the visible desktop; if Studio is in front,
+                // skip rather than incorrectly interpreting its UI as Sims Build Mode.
+                if(ContainsSimsWindowOcclusion()) {
+                    status.Text="The Sims 4 detected. Build/Buy visual check paused while Simscraft overlaps the game.";
+                    return;
+                }
+                using var current=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
                 var detection=InspectBuildBuyUi(current);
                 status.Text=detection.Likely
                     ? "Build/Buy interface likely detected automatically ("+detection.Detail+"). Visual estimate only."
