@@ -63,7 +63,7 @@ sealed class StudioWindow : Form {
         } catch { }
         return false;
     }
-    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll")] static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,UIntPtr dwExtraInfo);\n    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -827,6 +827,44 @@ sealed class StudioWindow : Form {
                 Environment.NewLine+"Tile (x,y) maps to origin + x * width vector + y * depth vector. Preview only — no mouse input.";
         };
         p.Controls.Add(startGrid);p.Controls.Add(clearGrid);p.Controls.Add(gridStatus);p.Controls.Add(gridPreview);
+        // Camera setup is explicit because the Sims 4 T shortcut toggles top-down.
+        // Never silently toggle during wall drags or reuse calibration afterwards.
+        var cameraTopDown=new CheckBox { Text="Sims 4 camera is already in top-down view",AutoSize=true,ForeColor=Color.White };
+        var cameraButton=new Button { Text="Set camera: toggle top-down (T)",AutoSize=true };
+        var cameraStatus=new Label { Text="Camera not confirmed. Camera changes invalidate the grid.",AutoSize=true,ForeColor=Color.White };
+        cameraButton.Click+=async (_,_)=>{
+            if(!SimsRunning()){cameraStatus.Text="Launch The Sims 4 first.";return;}
+            if(MessageBox.Show(this,"Sims 4 uses T to TOGGLE top-down view. If already top-down, leave it alone and check the confirmation box instead. Send T after switching to Sims 4?","Camera setup",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+            cameraButton.Enabled=false;
+            cameraTopDown.Checked=false;gridReady=false;gridPoints.Clear();
+            gridStatus.Text="Camera changed. Recalibrate the three tile centers.";
+            cameraStatus.Text="Switch to Sims 4 within 10 seconds to toggle the camera.";
+            try {
+                bool focused=false;
+                for(int i=0;i<50;i++){
+                    constructionCancel.Token.ThrowIfCancellationRequested();
+                    if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException();
+                    using var game=Process.GetProcesses().FirstOrDefault(x=>
+                        (x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||
+                         x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&
+                         x.MainWindowHandle==GetForegroundWindow());
+                    if(game!=null){focused=true;break;}
+                    await System.Threading.Tasks.Task.Delay(200,constructionCancel.Token);
+                }
+                if(!focused)throw new InvalidOperationException("Sims 4 was not focused in time.");
+                // Send the documented T toggle only while the game is foreground.
+                keybd_event(0x54,0,0,UIntPtr.Zero);
+                await System.Threading.Tasks.Task.Delay(80,constructionCancel.Token);
+                keybd_event(0x54,0,0x0002,UIntPtr.Zero);
+                cameraStatus.Text="T sent. Check the view is top-down, tick confirmation, then recalibrate grid.";
+            }catch(OperationCanceledException){cameraStatus.Text="Camera setup canceled.";}
+             catch(Exception ex){cameraStatus.Text="Camera setup failed: "+ex.Message;}
+            finally{cameraButton.Enabled=true;}
+        };
+        cameraTopDown.CheckedChanged+=(_,_)=>{
+            if(!cameraTopDown.Checked){gridReady=false;gridStatus.Text="Camera not confirmed; grid calibration invalidated.";}
+        };
+        p.Controls.Add(cameraButton);p.Controls.Add(cameraTopDown);p.Controls.Add(cameraStatus);
         var wallToolReady=new CheckBox { Text="I selected the straight Wall Tool in Sims 4, and the calibrated area is empty",AutoSize=true,ForeColor=Color.White };
         var buildTest=new Button { Text="BUILD TEST: place 4x4 room walls",AutoSize=true };
         var buildProgress=new Label { Text="Ready for first wall-placement test. ESC aborts.",AutoSize=true,ForeColor=Color.White };
@@ -840,8 +878,8 @@ sealed class StudioWindow : Form {
         }
         buildTest.Click+=async (_,_)=>{
             if(building)return;
-            if(!gridReady||!armed||!allowControl.Checked||!wallToolReady.Checked) {
-                buildProgress.Text="First calibrate the grid, arm construction, approve control, and confirm the straight Wall Tool.";
+            if(!gridReady||!armed||!allowControl.Checked||!wallToolReady.Checked||!cameraTopDown.Checked) {
+                buildProgress.Text="Confirm top-down camera, calibrate the grid, arm construction, approve control, and confirm the straight Wall Tool.";
                 return;
             }
             // Test a small room around the calibrated origin, not the full plan.
