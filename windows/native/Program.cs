@@ -947,17 +947,39 @@ sealed class StudioWindow : Form {
         }
         buildTest.Click+=async (_,_)=>{
             if(building)return;
-            var missing=new List<string>();
-            if(!gridReady)missing.Add("Calibrate lot grid (3 clicks). Auto grid spacing alone does not locate a safe origin.");
-            if(!allowControl.Checked)missing.Add("Check approval for Buildcraft to control The Sims 4.");
-            if(!armed)missing.Add("Click Arm construction and confirm its Build/Buy detection succeeded.");
-            if(!wallToolReady.Checked)missing.Add("Select the straight Wall Tool and check its confirmation box.");
-            if(!cameraTopDown.Checked)missing.Add("Confirm the camera is already top-down.");
-            if(missing.Count>0) {
-                string reason="Cannot start wall test:"+Environment.NewLine+string.Join(Environment.NewLine,missing.Select(x=>"• "+x));
-                buildProgress.Text="Build test blocked: "+string.Join(" | ",missing);
-                MessageBox.Show(this,reason,"Buildcraft: missing setup",MessageBoxButtons.OK,MessageBoxIcon.Information);
+            // One-click preflight: verify game mode and arm automatically, but
+            // never assume the camera, tool, or origin from a screen heuristic.
+            if(!SimsRunning()){buildProgress.Text="The Sims 4 is not running.";return;}
+            if(string.IsNullOrWhiteSpace(prompt.Text)){buildProgress.Text="Enter a house description first.";return;}
+            if(!gridReady){
+                buildProgress.Text="A verified tile origin is required. Auto spacing alone is insufficient.";
+                MessageBox.Show(this,"Automatic origin detection is not implemented yet. Calibrate three tile centers before the live wall test.","Buildcraft calibration required",MessageBoxButtons.OK,MessageBoxIcon.Information);
                 return;
+            }
+            if(!cameraTopDown.Checked||!wallToolReady.Checked){
+                buildProgress.Text="Confirm top-down camera and straight Wall Tool before live placement.";
+                MessageBox.Show(this,"Buildcraft cannot yet reliably recognize the camera angle or selected wall tool. Set top-down view, select the straight Wall Tool, and check both confirmations. The other setup checks will run automatically.","Buildcraft tool verification",MessageBoxButtons.OK,MessageBoxIcon.Information);
+                return;
+            }
+            if(!allowControl.Checked){
+                if(MessageBox.Show(this,"Allow Buildcraft to control the mouse in The Sims 4 for this four-wall test? It may spend in-game funds and modify your lot.","Approve game control",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+                allowControl.Checked=true;
+            }
+            if(!armed){
+                buildProgress.Text="Automatically checking Build Mode and arming...";
+                try{
+                    using var current=await CaptureSimsUnobstructedAsync();
+                    var detection=InspectBuildBuyUi(current);
+                    if(!detection.Likely){
+                        buildProgress.Text="Cannot arm automatically: Build/Buy screen not recognized ("+detection.Detail+").";
+                        return;
+                    }
+                    armed=true;
+                    constructionState.Text="Auto-armed after Build/Buy visual check ("+detection.Detail+").";
+                }catch(Exception ex){
+                    buildProgress.Text="Automatic preflight failed: "+ex.Message;
+                    return;
+                }
             }
             // Test a small room around the calibrated origin, not the full plan.
             System.Drawing.Point Project(int x,int y)=>new(
