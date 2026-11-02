@@ -925,6 +925,7 @@ sealed class StudioWindow : Form {
         bool collectingGrid=false,gridMouseWasDown=false;
         System.Drawing.Point gridOrigin=default,gridWidthStep=default,gridDepthStep=default;
         bool gridReady=false;
+        var gridTimer=new System.Windows.Forms.Timer { Interval=40 };
         var autoGrid=new Button { Text="Analyze Grid Spacing (origin requires 3 clicks)",AutoSize=true };
         autoGrid.Click+=async (_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 and open the intended lot in Build Mode.";return;}
@@ -955,7 +956,6 @@ sealed class StudioWindow : Form {
             }finally{autoGrid.Enabled=true;}
         };
         p.Controls.Add(autoGrid);
-        var gridTimer=new System.Windows.Forms.Timer { Interval=40 };
         startGrid.Click+=(_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 before calibrating.";return;}
             gridPoints.Clear();gridReady=false;collectingGrid=true;gridMouseWasDown=true;
