@@ -566,21 +566,39 @@ sealed class StudioWindow : Form {
         return await completion.Task.WaitAsync(TimeSpan.FromSeconds(30));
     }
     static Bitmap CaptureSimsWindow() {
-        using var game=Process.GetProcesses().FirstOrDefault(x=>
+        // Prefer the actual foreground game window; background/helper processes may
+        // have zero-sized, minimized, or otherwise unusable MainWindowHandle bounds.
+        var foreground=GetForegroundWindow();
+        var candidates=Process.GetProcesses().Where(x=>
             x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase) ||
-            x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase));
-        if(game==null)throw new InvalidOperationException("The Sims 4 is not running.");
-        if(game.MainWindowHandle==IntPtr.Zero)throw new InvalidOperationException("No visible Sims 4 window found.");
-        if(!GetWindowRect(game.MainWindowHandle,out var rect))throw new IOException("Cannot locate Sims 4 window.");
-        int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
-        if(w<300||h<300||w>8192||h>8192||((long)w*h)>30_000_000)
-            throw new InvalidDataException("Invalid game window size.");
-        var image=new Bitmap(w,h);
+            x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();
         try {
-            using(var graphics=Graphics.FromImage(image))
-                graphics.CopyFromScreen(rect.Left,rect.Top,0,0,new Size(w,h));
-            return image;
-        } catch {image.Dispose();throw;}
+            if(candidates.Length==0)throw new InvalidOperationException("The Sims 4 is not running.");
+            var windows=new List<(IntPtr Handle,int X,int Y,int W,int H,string Name)>();
+            foreach(var game in candidates) {
+                if(game.MainWindowHandle==IntPtr.Zero||!GetWindowRect(game.MainWindowHandle,out var rect))continue;
+                int w=rect.Right-rect.Left,h=rect.Bottom-rect.Top;
+                if(w>=300&&h>=300&&w<=8192&&h<=8192&&((long)w*h)<=30_000_000)
+                    windows.Add((game.MainWindowHandle,rect.Left,rect.Top,w,h,game.ProcessName));
+            }
+            if(windows.Count==0) {
+                var sizes=string.Join("; ",candidates.Select(game=>{
+                    if(game.MainWindowHandle==IntPtr.Zero)return game.ProcessName+": no main window";
+                    if(!GetWindowRect(game.MainWindowHandle,out var rect))return game.ProcessName+": bounds unavailable";
+                    return game.ProcessName+": "+(rect.Right-rect.Left)+"x"+(rect.Bottom-rect.Top);
+                }));
+                throw new InvalidDataException("No usable Sims 4 game window. Detected: "+sizes+
+                    ". Restore the game window and make sure it is not minimized.");
+            }
+            var chosen=windows.FirstOrDefault(x=>x.Handle==foreground);
+            if(chosen.Handle==IntPtr.Zero)chosen=windows.OrderByDescending(x=>(long)x.W*x.H).First();
+            var image=new Bitmap(chosen.W,chosen.H);
+            try {
+                using(var graphics=Graphics.FromImage(image))
+                    graphics.CopyFromScreen(chosen.X,chosen.Y,0,0,new Size(chosen.W,chosen.H));
+                return image;
+            }catch {image.Dispose();throw;}
+        }finally{foreach(var game in candidates)game.Dispose();}
     }
     // UI-only heuristic: compare several stable toolbar patches, never the changing lot.
     // This is not a verified game state; low confidence must block construction.
