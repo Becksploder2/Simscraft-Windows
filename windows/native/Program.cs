@@ -659,7 +659,7 @@ sealed class StudioWindow : Form {
                     using var current=CaptureSimsWindow();
                     double aspectDelta=Math.Abs((double)reference.Width/reference.Height-(double)current.Width/current.Height);
                     double score=BuildUiSimilarity(reference,current);
-                    return (score,aspectDelta,refSize=reference.Size,gameSize=current.Size);
+                    return (score,aspectDelta,refSize: reference.Size,gameSize: current.Size);
                 }).WaitAsync(TimeSpan.FromSeconds(15));
                 string sizes="Reference "+diagnostic.refSize.Width+"x"+diagnostic.refSize.Height+
                     "; game capture "+diagnostic.gameSize.Width+"x"+diagnostic.gameSize.Height+". ";
