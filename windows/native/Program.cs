@@ -927,34 +927,32 @@ sealed class StudioWindow : Form {
         bool gridReady=false;
         var autoGrid=new Button { Text="Analyze Grid Spacing (origin requires 3 clicks)",AutoSize=true };
         autoGrid.Click+=async (_,_)=>{
-            if(!SimsRunning()){gridStatus.Text="The Sims 4 is not running.";return;}
-            autoGrid.Enabled=false;gridReady=false;
+            if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 and open the intended lot in Build Mode.";return;}
+            if(collectingGrid){gridStatus.Text="Finish the three grid clicks or Reset grid first.";return;}
+            autoGrid.Enabled=false;
+            gridReady=false;
             try {
-                gridStatus.Text="Switch to Sims 4 within 8 seconds for automatic grid analysis.";
-                bool focused=false;
-                for(int i=0;i<40;i++) {
-                    if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException();
-                    using var game=Process.GetProcesses().FirstOrDefault(x=>
-                        (x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||
-                         x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&
-                        x.MainWindowHandle==GetForegroundWindow());
-                    if(game!=null){focused=true;break;}
-                    await System.Threading.Tasks.Task.Delay(200);
-                }
-                if(!focused)throw new InvalidOperationException("Sims 4 was not focused in time.");
+                gridStatus.Text="Analyzing the visible Sims 4 grid. Keep the intended lot visible.";
+                // Capture the actual game window; do not require focus or hide/reopen Studio.
                 using var screenshot=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
                 var estimate=await System.Threading.Tasks.Task.Run(()=>EstimateLotGrid(screenshot));
-                if(!estimate.Found) {
-                    gridStatus.Text="Grid estimate uncertain ("+estimate.Confidence.ToString("P0")+"). No construction authorized.";
-                    gridPreview.Text="Spacing analysis failed. Open the intended lot in Build Mode, enable the grid, then use three-click calibration. No automatic wall placement is authorized.";
-                } else {
-                    gridStatus.Text="Grid spacing estimate only ("+estimate.Confidence.ToString("P0")+"). Select the correct lot and calibrate three tile centers before building.";
-                    gridPreview.Text="Estimated X spacing: "+estimate.StepX+" px; Y spacing: "+estimate.StepY+
-                        " px. The analyzer cannot identify which lot is active or locate its origin. Use manual calibration on the intended lot.";
-                }
-            }catch(OperationCanceledException){gridStatus.Text="Auto-calibration canceled.";}
-             catch(Exception ex){gridStatus.Text="Auto-calibration failed: "+ex.Message;}
-            finally{autoGrid.Enabled=true;}
+                gridPreview.Text="Grid spacing confidence: "+estimate.Confidence.ToString("P0")+
+                    ". Estimated horizontal spacing: "+estimate.StepX+" px, vertical: "+estimate.StepY+
+                    " px."+Environment.NewLine+
+                    "The image cannot reliably determine the active lot or its grid origin. Click three adjacent tile centers on the intended lot to finish calibration.";
+                gridStatus.Text=estimate.Found
+                    ?"Grid spacing found. Complete three-click origin calibration on the intended lot."
+                    :"Grid spacing uncertain. Complete three-click calibration on the intended lot.";
+                // Continue to the interactive calibration phase rather than dead-ending.
+                gridPoints.Clear();
+                collectingGrid=true;
+                gridMouseWasDown=(GetAsyncKeyState(0x01)&0x8000)!=0;
+                gridStatus.Text+=" Click tile 1 of 3 in Sims 4 now.";
+                gridTimer.Start();
+            }catch(Exception ex){
+                gridStatus.Text="Grid analysis unavailable: "+ex.Message+". Manual calibration remains available.";
+                gridPreview.Text="Open the correct lot, choose Build Mode, and click Calibrate lot grid (3 clicks).";
+            }finally{autoGrid.Enabled=true;}
         };
         p.Controls.Add(autoGrid);
         var gridTimer=new System.Windows.Forms.Timer { Interval=40 };
