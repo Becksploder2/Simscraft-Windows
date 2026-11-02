@@ -751,7 +751,7 @@ sealed class StudioWindow : Form {
                 var detection=InspectBuildBuyUi(current);
                 if(!detection.Likely){constructionState.Text="Not armed: Build/Buy catalog not confidently recognized ("+detection.Detail+").";return;}
                 armed=true;
-                constructionState.Text="Build/Buy appears active ("+detection.Detail+"). DRY RUN only; no game input is authorized.";
+                constructionState.Text="Build/Buy appears active ("+detection.Detail+"). Armed for an explicitly confirmed 4x4 wall test only.";
             }catch(OperationCanceledException){constructionState.Text="STOPPED.";}
              catch(Exception ex){constructionState.Text="Cannot arm: "+ex.Message;}
             finally{arm.Enabled=true;}
@@ -827,6 +827,71 @@ sealed class StudioWindow : Form {
                 Environment.NewLine+"Tile (x,y) maps to origin + x * width vector + y * depth vector. Preview only — no mouse input.";
         };
         p.Controls.Add(startGrid);p.Controls.Add(clearGrid);p.Controls.Add(gridStatus);p.Controls.Add(gridPreview);
+        var wallToolReady=new CheckBox { Text="I selected the straight Wall Tool in Sims 4, and the calibrated area is empty",AutoSize=true,ForeColor=Color.White };
+        var buildTest=new Button { Text="BUILD TEST: place 4x4 room walls",AutoSize=true };
+        var buildProgress=new Label { Text="Ready for first wall-placement test. ESC aborts.",AutoSize=true,ForeColor=Color.White };
+        bool building=false;
+        bool SimsForeground() {
+            using var game=Process.GetProcesses().FirstOrDefault(x=>
+                (x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||
+                 x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&
+                x.MainWindowHandle==GetForegroundWindow());
+            return game!=null;
+        }
+        buildTest.Click+=async (_,_)=>{
+            if(building)return;
+            if(!gridReady||!armed||!allowControl.Checked||!wallToolReady.Checked) {
+                buildProgress.Text="First calibrate the grid, arm construction, approve control, and confirm the straight Wall Tool.";
+                return;
+            }
+            // Test a small room around the calibrated origin, not the full plan.
+            System.Drawing.Point Project(int x,int y)=>new(
+                gridOrigin.X+x*gridWidthStep.X+y*gridDepthStep.X,
+                gridOrigin.Y+x*gridWidthStep.Y+y*gridDepthStep.Y);
+            var corners=new[]{Project(0,0),Project(4,0),Project(4,4),Project(0,4)};
+            var bounds=Screen.AllScreens.Select(x=>x.Bounds).ToArray();
+            if(corners.Any(c=>!bounds.Any(b=>b.Contains(c)))) {
+                buildProgress.Text="Room corners are outside the display. Recalibrate with the camera unchanged.";
+                return;
+            }
+            if(MessageBox.Show(this,"Buildcraft will physically drag four walls around a 4x4 area in The Sims 4. This can spend in-game funds and change your lot. Save your lot first. Select the straight Wall Tool and switch to Sims within 12 seconds. Press ESC to stop. Continue?","Confirm live wall placement",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            building=true;buildTest.Enabled=false;checkingMode=true;
+            buildProgress.Text="Waiting for Sims 4 to become foreground (12 seconds). ESC cancels.";
+            try {
+                bool ready=false;
+                for(int i=0;i<60;i++){
+                    constructionCancel.Token.ThrowIfCancellationRequested();
+                    if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException();
+                    if(SimsForeground()){ready=true;break;}
+                    await System.Threading.Tasks.Task.Delay(200,constructionCancel.Token);
+                }
+                if(!ready)throw new InvalidOperationException("Sims 4 was not activated in time.");
+                for(int side=0;side<4;side++){
+                    constructionCancel.Token.ThrowIfCancellationRequested();
+                    if((GetAsyncKeyState(0x1B)&0x8000)!=0||!SimsForeground())throw new OperationCanceledException();
+                    var from=corners[side];var to=corners[(side+1)%4];
+                    SetCursorPos(from.X,from.Y);
+                    await System.Threading.Tasks.Task.Delay(150,constructionCancel.Token);
+                    if(!SimsForeground())throw new OperationCanceledException();
+                    mouse_event(0x0002,0,0,0,UIntPtr.Zero); // left down
+                    try {
+                        for(int step=1;step<=12;step++){
+                            if((GetAsyncKeyState(0x1B)&0x8000)!=0||!SimsForeground())throw new OperationCanceledException();
+                            constructionCancel.Token.ThrowIfCancellationRequested();
+                            SetCursorPos(from.X+(to.X-from.X)*step/12,from.Y+(to.Y-from.Y)*step/12);
+                            await System.Threading.Tasks.Task.Delay(30,constructionCancel.Token);
+                        }
+                    }finally{mouse_event(0x0004,0,0,0,UIntPtr.Zero);} // always release
+                    buildProgress.Text="Wall "+(side+1)+" of 4 dragged. Check the game for actual placement.";
+                    await System.Threading.Tasks.Task.Delay(350,constructionCancel.Token);
+                }
+                buildProgress.Text="Four wall drags sent. Inspect Sims 4 to confirm the walls were placed correctly.";
+            }catch(OperationCanceledException){buildProgress.Text="STOPPED: wall placement canceled.";}
+             catch(Exception ex){buildProgress.Text="Wall placement halted: "+ex.Message;}
+            finally{building=false;armed=false;buildTest.Enabled=true;checkingMode=false;}
+        };
+        p.Controls.Add(wallToolReady);p.Controls.Add(buildTest);p.Controls.Add(buildProgress);
+
         page.Disposed+=(_,_)=>gridTimer.Dispose();
         var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
         var plan=new Button { Text="Create starter build plan",AutoSize=true };
@@ -892,7 +957,7 @@ sealed class StudioWindow : Form {
             }catch(Exception ex){status.Text="Export failed: "+ex.Message;}
         };
         p.Controls.Add(export);
-        Caption(p,"Safety: No input is sent to the game. Build Mode automation requires verified detection and explicit approval.");
+        Caption(p,"Safety: Live wall test requires explicit confirmation and selected Wall Tool. ESC or EMERGENCY STOP aborts. Save the lot first.");
     }
     void BuildSettingsTab(TabPage page) {
         var p=Panel(page);Caption(p,"Simcraft Studio — native preview");
