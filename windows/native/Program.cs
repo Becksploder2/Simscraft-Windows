@@ -925,7 +925,7 @@ sealed class StudioWindow : Form {
         bool collectingGrid=false,gridMouseWasDown=false;
         System.Drawing.Point gridOrigin=default,gridWidthStep=default,gridDepthStep=default;
         bool gridReady=false;
-        var autoGrid=new Button { Text="Auto-Calibrate Lot (experimental)",AutoSize=true };
+        var autoGrid=new Button { Text="Analyze Grid Spacing (origin requires 3 clicks)",AutoSize=true };
         autoGrid.Click+=async (_,_)=>{
             if(!SimsRunning()){gridStatus.Text="The Sims 4 is not running.";return;}
             autoGrid.Enabled=false;gridReady=false;
@@ -946,11 +946,11 @@ sealed class StudioWindow : Form {
                 var estimate=await System.Threading.Tasks.Task.Run(()=>EstimateLotGrid(screenshot));
                 if(!estimate.Found) {
                     gridStatus.Text="Grid estimate uncertain ("+estimate.Confidence.ToString("P0")+"). No construction authorized.";
-                    gridPreview.Text="Use a visible grid on an empty lot, or use manual three-click calibration.";
+                    gridPreview.Text="Spacing analysis failed. Open the intended lot in Build Mode, enable the grid, then use three-click calibration. No automatic wall placement is authorized.";
                 } else {
-                    gridStatus.Text="Possible grid spacing detected ("+estimate.Confidence.ToString("P0")+"). Lot origin still unverified.";
+                    gridStatus.Text="Grid spacing estimate only ("+estimate.Confidence.ToString("P0")+"). Select the correct lot and calibrate three tile centers before building.";
                     gridPreview.Text="Estimated X spacing: "+estimate.StepX+" px; Y spacing: "+estimate.StepY+
-                        " px. Auto-detection does not yet determine the tile origin; live construction stays locked.";
+                        " px. The analyzer cannot identify which lot is active or locate its origin. Use manual calibration on the intended lot.";
                 }
             }catch(OperationCanceledException){gridStatus.Text="Auto-calibration canceled.";}
              catch(Exception ex){gridStatus.Text="Auto-calibration failed: "+ex.Message;}
@@ -961,8 +961,8 @@ sealed class StudioWindow : Form {
         startGrid.Click+=(_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 before calibrating.";return;}
             gridPoints.Clear();gridReady=false;collectingGrid=true;gridMouseWasDown=true;
-            gridStatus.Text="Click the CENTER of a visible lot tile in Sims 4 (point 1 of 3).";
-            gridPreview.Text="Click 1: origin tile center. Click 2: adjacent tile along lot WIDTH. Click 3: adjacent tile along lot DEPTH. Keep the camera fixed.";
+            gridStatus.Text="On the INTENDED lot, click the CENTER of a visible buildable tile in Sims 4 (point 1 of 3).";
+            gridPreview.Text="First open the intended lot in Build Mode. Click 1: tile center at desired wall location. Click 2: adjacent tile along WIDTH. Click 3: adjacent tile along DEPTH. Keep camera and lot fixed.";
             gridTimer.Start();
         };
         clearGrid.Click+=(_,_)=>{
@@ -999,7 +999,7 @@ sealed class StudioWindow : Form {
                 gridStatus.Text="Calibration rejected: choose three distinct adjacent tile centers forming two grid directions. Try again.";
                 return;
             }
-            gridStatus.Text="Grid calibrated (screen coordinates). Keep camera, zoom and window position unchanged.";
+            gridStatus.Text="Screen grid calibrated, NOT lot-verified. Confirm the footprint lies on the intended lot. Keep camera, zoom and window position unchanged.";
             gridPreview.Text="Origin: ("+gridOrigin.X+","+gridOrigin.Y+") | Width/tile: ("+gridWidthStep.X+","+gridWidthStep.Y+") | Depth/tile: ("+gridDepthStep.X+","+gridDepthStep.Y+")"+
                 Environment.NewLine+"Tile (x,y) maps to origin + x * width vector + y * depth vector. Preview only — no mouse input.";
         };
@@ -1099,7 +1099,7 @@ sealed class StudioWindow : Form {
                 buildProgress.Text="Room corners are outside the display. Recalibrate with the camera unchanged.";
                 return;
             }
-            if(MessageBox.Show(this,"Buildcraft will physically drag four walls around a 4x4 area in The Sims 4. This can spend in-game funds and change your lot. Save your lot first. Select the straight Wall Tool and switch to Sims within 12 seconds. Press ESC to stop. Continue?","Confirm live wall placement",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            if(MessageBox.Show(this,"Buildcraft CANNOT detect the active lot or verify the 4x4 footprint. The walls will be placed relative to your FIRST calibration click. Confirm that click was on the intended buildable lot, and all four corners are within its boundaries. Save first. Select the straight Wall Tool and switch to Sims within 12 seconds. ESC stops. Continue?","Confirm live wall placement",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
             building=true;buildTest.Enabled=false;checkingMode=true;
             buildProgress.Text="Waiting for Sims 4 to become foreground (12 seconds). ESC cancels.";
             try {
