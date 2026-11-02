@@ -689,7 +689,7 @@ sealed class StudioWindow : Form {
         detect.Click+=(_,_)=>{
             try {
                 var games=Process.GetProcesses().Where(x=>x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase)).ToArray();
-                status.Text=games.Length>0?"The Sims 4 detected (process only). Click Check Build/Buy Mode to verify the interface.":"The Sims 4 not detected.";
+                status.Text=games.Length>0?"The Sims 4 detected. Build/Buy detection runs automatically while this tab is open.":"The Sims 4 not detected.";
                 foreach(var game in games)game.Dispose();
             }catch(Exception ex){status.Text="Detection failed: "+ex.Message;}
         };
@@ -746,15 +746,19 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(allowControl);p.Controls.Add(arm);p.Controls.Add(stop);p.Controls.Add(constructionState);
         page.Disposed+=(_,_)=>constructionCancel.Dispose();
-        var connectionMonitor=new System.Windows.Forms.Timer { Interval=3000 };
-        connectionMonitor.Tick+=(_,_)=>{
-            if(status.IsDisposed || tabs.SelectedTab != page)return;
-            if(status.Text.StartsWith("The Sims 4") || status.Text.StartsWith("Checking") || status.Text.StartsWith("Sims 4"))
-                status.Text=SimsRunning()?"The Sims 4 running. Build/Buy verification requires a reference and mode check.":"The Sims 4 is not running.";
+        // Poll while Buildcraft is selected. The capture briefly hides our window
+        // so it cannot accidentally be mistaken for the game's bottom catalog.
+        var connectionMonitor=new System.Windows.Forms.Timer { Interval=8000 };
+        connectionMonitor.Tick+=async (_,_)=>{
+            if(status.IsDisposed || tabs.SelectedTab!=page || checkingMode)return;
+            if(!SimsRunning()){status.Text="The Sims 4 is not running.";return;}
+            checkingMode=true;
+            try { await CheckBuildModeAsync(); }
+            finally { checkingMode=false; }
         };
         connectionMonitor.Start();
         page.Disposed+=(_,_)=>connectionMonitor.Dispose();
-        status.Text=SimsRunning()?"The Sims 4 process connected. Build/Buy mode not verified.":"The Sims 4 is not running.";
+        status.Text=SimsRunning()?"The Sims 4 detected. Automatic Build/Buy monitoring is active.":"The Sims 4 is not running.";
         var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
         var plan=new Button { Text="Create starter build plan",AutoSize=true };
         plan.Click+=(_,_)=>{
