@@ -462,11 +462,9 @@ sealed class StudioWindow : Form {
             casStatus.Text="Checking current game screen against CAS reference...";
             try {
                 if(!File.Exists(casReference))throw new InvalidOperationException("Set CAS reference screenshot first.");
-                double similarity=await System.Threading.Tasks.Task.Run(()=>{
-                    using var reference=new Bitmap(casReference);
-                    using var current=await CaptureSimsUnobstructedAsync();
-                    return BuildUiSimilarity(reference,current);
-                }).WaitAsync(TimeSpan.FromSeconds(12));
+                using var reference=new Bitmap(casReference);
+                using var current=await CaptureSimsUnobstructedAsync();
+                double similarity=BuildUiSimilarity(reference,current);
                 casStatus.Text=similarity>=0.87
                     ? "CAS screen visually resembles saved reference ("+similarity.ToString("P0")+"). This is a heuristic, not verified game state."
                     : "CAS not visually confirmed ("+similarity.ToString("P0")+"). Ensure Sims 4 is visible and the screenshot matches the current resolution.";
