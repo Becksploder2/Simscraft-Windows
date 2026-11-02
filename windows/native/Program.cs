@@ -771,6 +771,63 @@ sealed class StudioWindow : Form {
         connectionMonitor.Start();
         page.Disposed+=(_,_)=>connectionMonitor.Dispose();
         status.Text=SimsRunning()?"The Sims 4 detected. Automatic Build/Buy monitoring is active.":"The Sims 4 is not running.";
+        Caption(p,"Lot grid calibration — three tile-center clicks (dry run)");
+        var gridStatus=new Label { Text="Not calibrated. Enter Build Mode, then start calibration.",AutoSize=true,ForeColor=Color.White };
+        var startGrid=new Button { Text="Calibrate lot grid (3 clicks)",AutoSize=true };
+        var clearGrid=new Button { Text="Reset grid",AutoSize=true };
+        var gridPreview=new TextBox { Width=760,Height=105,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
+        var gridPoints=new List<System.Drawing.Point>();
+        bool collectingGrid=false,gridMouseWasDown=false;
+        System.Drawing.Point gridOrigin=default,gridWidthStep=default,gridDepthStep=default;
+        bool gridReady=false;
+        var gridTimer=new System.Windows.Forms.Timer { Interval=40 };
+        startGrid.Click+=(_,_)=>{
+            if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 before calibrating.";return;}
+            gridPoints.Clear();gridReady=false;collectingGrid=true;gridMouseWasDown=true;
+            gridStatus.Text="Click the CENTER of a visible lot tile in Sims 4 (point 1 of 3).";
+            gridPreview.Text="Click 1: origin tile center. Click 2: adjacent tile along lot WIDTH. Click 3: adjacent tile along lot DEPTH. Keep the camera fixed.";
+            gridTimer.Start();
+        };
+        clearGrid.Click+=(_,_)=>{
+            collectingGrid=false;gridTimer.Stop();gridPoints.Clear();gridReady=false;
+            gridStatus.Text="Grid calibration reset.";gridPreview.Clear();
+        };
+        gridTimer.Tick+=(_,_)=>{
+            if(!collectingGrid)return;
+            bool down=(GetAsyncKeyState(0x01)&0x8000)!=0;
+            bool fresh=down&&!gridMouseWasDown;
+            gridMouseWasDown=down;
+            if(!fresh)return;
+            using var game=Process.GetProcesses().FirstOrDefault(x=>
+                (x.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||
+                 x.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&
+                x.MainWindowHandle==GetForegroundWindow());
+            if(game==null||!GetCursorPos(out var cursor))return;
+            gridPoints.Add(cursor);
+            if(gridPoints.Count<3){
+                gridStatus.Text=gridPoints.Count==1
+                    ? "Origin captured. Click the CENTER of the next tile along lot WIDTH (point 2)."
+                    : "Width step captured. Click the CENTER of the tile next to the origin along lot DEPTH (point 3).";
+                return;
+            }
+            collectingGrid=false;gridTimer.Stop();
+            gridOrigin=gridPoints[0];
+            gridWidthStep=new System.Drawing.Point(gridPoints[1].X-gridOrigin.X,gridPoints[1].Y-gridOrigin.Y);
+            gridDepthStep=new System.Drawing.Point(gridPoints[2].X-gridOrigin.X,gridPoints[2].Y-gridOrigin.Y);
+            double cross=(double)gridWidthStep.X*gridDepthStep.Y-(double)gridWidthStep.Y*gridDepthStep.X;
+            double wlen=Math.Sqrt((double)gridWidthStep.X*gridWidthStep.X+(double)gridWidthStep.Y*gridWidthStep.Y);
+            double dlen=Math.Sqrt((double)gridDepthStep.X*gridDepthStep.X+(double)gridDepthStep.Y*gridDepthStep.Y);
+            gridReady=wlen>=5&&dlen>=5&&Math.Abs(cross)>wlen*dlen*.15;
+            if(!gridReady){
+                gridStatus.Text="Calibration rejected: choose three distinct adjacent tile centers forming two grid directions. Try again.";
+                return;
+            }
+            gridStatus.Text="Grid calibrated (screen coordinates). Keep camera, zoom and window position unchanged.";
+            gridPreview.Text="Origin: ("+gridOrigin.X+","+gridOrigin.Y+") | Width/tile: ("+gridWidthStep.X+","+gridWidthStep.Y+") | Depth/tile: ("+gridDepthStep.X+","+gridDepthStep.Y+")"+
+                Environment.NewLine+"Tile (x,y) maps to origin + x * width vector + y * depth vector. Preview only — no mouse input.";
+        };
+        p.Controls.Add(startGrid);p.Controls.Add(clearGrid);p.Controls.Add(gridStatus);p.Controls.Add(gridPreview);
+        page.Disposed+=(_,_)=>gridTimer.Dispose();
         var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
         var plan=new Button { Text="Create starter build plan",AutoSize=true };
         plan.Click+=(_,_)=>{
@@ -811,6 +868,16 @@ sealed class StudioWindow : Form {
                 "Top-down grid (# perimeter wall, D entry opening, . unoccupied):"+Environment.NewLine+
                 map.ToString()+Environment.NewLine+
                 "Room partitions, furniture, floor levels, and game placement are not generated yet. No game input sent.";
+            if(gridReady) {
+                int x0=startX,y0=startY,x1=startX+houseW-1,y1=startY+houseD-1;
+                System.Drawing.Point Project(int x,int y)=>new(
+                    gridOrigin.X+x*gridWidthStep.X+y*gridDepthStep.X,
+                    gridOrigin.Y+x*gridWidthStep.Y+y*gridDepthStep.Y);
+                var corners=new[]{Project(x0,y0),Project(x1,y0),Project(x1,y1),Project(x0,y1)};
+                output.AppendText(Environment.NewLine+"DRY-RUN SCREEN CORNERS (no clicks): "+
+                    string.Join(" → ",corners.Select(c=>"("+c.X+","+c.Y+")"))+
+                    Environment.NewLine+"Grid mapping assumes origin tile is lot coordinate (0,0), with unchanged camera and zoom.");
+            } else output.AppendText(Environment.NewLine+"Calibrate the lot grid to preview wall coordinates on screen.");
             status.Text="Starter footprint generated locally. Construction remains dry-run.";
         };
         p.Controls.Add(plan);p.Controls.Add(output);
@@ -820,7 +887,7 @@ sealed class StudioWindow : Form {
             using var dialog=new SaveFileDialog { Filter="JSON files|*.json",FileName="buildcraft-project.json" };
             if(dialog.ShowDialog()!=DialogResult.OK)return;
             try {
-                File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(new {format="simcraft-buildcraft-project",schemaVersion=1,lotWidth=(int)width.Value,lotDepth=(int)depth.Value,description=prompt.Text,constructionEnabled=false},new JsonSerializerOptions {WriteIndented=true}));
+                File.WriteAllText(dialog.FileName,JsonSerializer.Serialize(new {format="simcraft-buildcraft-project",schemaVersion=1,lotWidth=(int)width.Value,lotDepth=(int)depth.Value,description=prompt.Text,gridCalibrated=gridReady,gridOrigin=gridReady?new[]{gridOrigin.X,gridOrigin.Y}:null,gridWidthStep=gridReady?new[]{gridWidthStep.X,gridWidthStep.Y}:null,gridDepthStep=gridReady?new[]{gridDepthStep.X,gridDepthStep.Y}:null,constructionEnabled=false},new JsonSerializerOptions {WriteIndented=true}));
                 status.Text="Buildcraft project exported.";
             }catch(Exception ex){status.Text="Export failed: "+ex.Message;}
         };
