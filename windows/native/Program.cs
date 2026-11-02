@@ -947,8 +947,16 @@ sealed class StudioWindow : Form {
         }
         buildTest.Click+=async (_,_)=>{
             if(building)return;
-            if(!gridReady||!armed||!allowControl.Checked||!wallToolReady.Checked||!cameraTopDown.Checked) {
-                buildProgress.Text="Confirm top-down camera, calibrate the grid, arm construction, approve control, and confirm the straight Wall Tool.";
+            var missing=new List<string>();
+            if(!gridReady)missing.Add("Calibrate lot grid (3 clicks). Auto grid spacing alone does not locate a safe origin.");
+            if(!allowControl.Checked)missing.Add("Check approval for Buildcraft to control The Sims 4.");
+            if(!armed)missing.Add("Click Arm construction and confirm its Build/Buy detection succeeded.");
+            if(!wallToolReady.Checked)missing.Add("Select the straight Wall Tool and check its confirmation box.");
+            if(!cameraTopDown.Checked)missing.Add("Confirm the camera is already top-down.");
+            if(missing.Count>0) {
+                string reason="Cannot start wall test:"+Environment.NewLine+string.Join(Environment.NewLine,missing.Select(x=>"• "+x));
+                buildProgress.Text="Build test blocked: "+string.Join(" | ",missing);
+                MessageBox.Show(this,reason,"Buildcraft: missing setup",MessageBoxButtons.OK,MessageBoxIcon.Information);
                 return;
             }
             // Test a small room around the calibrated origin, not the full plan.
