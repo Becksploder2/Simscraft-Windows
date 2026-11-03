@@ -864,6 +864,7 @@ sealed class StudioWindow : Form {
         var stop=new Button { Text="EMERGENCY STOP",AutoSize=true,BackColor=Color.DarkRed,ForeColor=Color.White };
         var constructionCancel=new System.Threading.CancellationTokenSource();
         bool armed=false;
+        bool gridReady=false;
         stop.Click+=(_,_)=>{
             constructionCancel.Cancel();
             constructionCancel.Dispose();
@@ -893,7 +894,9 @@ sealed class StudioWindow : Form {
                     return;
                 }
                 armed=true;
-                constructionState.Text="ARMED. Build/Buy detected. Calibrate the grid and confirm Wall Tool before running the 4x4 test.";
+                constructionState.Text=gridReady
+                    ?"ARMED. Existing grid calibration retained. Confirm camera and Wall Tool, then run the 4x4 test."
+                    :"ARMED. Build/Buy detected, but no grid calibration exists yet. Calibrate once on this lot.";
             } catch(Exception ex) {
                 armed=false;
                 constructionState.Text="ARM failed safely: "+ex.Message;
@@ -924,14 +927,13 @@ sealed class StudioWindow : Form {
         var gridPoints=new List<System.Drawing.Point>();
         bool collectingGrid=false,gridMouseWasDown=false;
         System.Drawing.Point gridOrigin=default,gridWidthStep=default,gridDepthStep=default;
-        bool gridReady=false;
         var gridTimer=new System.Windows.Forms.Timer { Interval=40 };
         var autoGrid=new Button { Text="Analyze Grid Spacing (origin requires 3 clicks)",AutoSize=true };
         autoGrid.Click+=async (_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 and open the intended lot in Build Mode.";return;}
             if(collectingGrid){gridStatus.Text="Finish the three grid clicks or Reset grid first.";return;}
+            if(gridReady){gridStatus.Text="Grid already calibrated. Existing calibration preserved; use Reset grid only if lot or camera changed.";return;}
             autoGrid.Enabled=false;
-            gridReady=false;
             try {
                 gridStatus.Text="Analyzing the visible Sims 4 grid. Keep the intended lot visible.";
                 // Capture the actual game window; do not require focus or hide/reopen Studio.
