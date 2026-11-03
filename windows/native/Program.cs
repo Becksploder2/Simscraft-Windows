@@ -1099,6 +1099,14 @@ sealed class StudioWindow : Form {
             }
             if(MessageBox.Show(this,"Buildcraft CANNOT detect the active lot or verify the 4x4 footprint. The walls will be placed relative to your FIRST calibration click. Confirm that click was on the intended buildable lot, and all four corners are within its boundaries. Save first. Select the straight Wall Tool and switch to Sims within 12 seconds. ESC stops. Continue?","Confirm live wall placement",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
             building=true;buildTest.Enabled=false;checkingMode=true;
+            string cancelReason="Canceled by user or safety control.";
+            int focusMisses=0;
+            void CheckWallSafety() {
+                constructionCancel.Token.ThrowIfCancellationRequested();
+                if((GetAsyncKeyState(0x1B)&0x8000)!=0){cancelReason="ESC pressed.";throw new OperationCanceledException();}
+                if(SimsForeground()){focusMisses=0;return;}
+                if(++focusMisses>=4){cancelReason="Sims 4 lost foreground focus during wall placement.";throw new OperationCanceledException();}
+            }
             buildProgress.Text="Waiting for Sims 4 to become foreground (12 seconds). ESC cancels.";
             try {
                 bool ready=false;
@@ -1111,11 +1119,11 @@ sealed class StudioWindow : Form {
                 if(!ready)throw new InvalidOperationException("Sims 4 was not activated in time.");
                 for(int side=0;side<4;side++){
                     constructionCancel.Token.ThrowIfCancellationRequested();
-                    if((GetAsyncKeyState(0x1B)&0x8000)!=0||!SimsForeground())throw new OperationCanceledException();
+                    CheckWallSafety();
                     var from=corners[side];var to=corners[(side+1)%4];
                     SetCursorPos(from.X,from.Y);
                     await System.Threading.Tasks.Task.Delay(150,constructionCancel.Token);
-                    if(!SimsForeground())throw new OperationCanceledException();
+                    CheckWallSafety();
                     mouse_event(0x0002,0,0,0,UIntPtr.Zero); // left down
                     try {
                         for(int step=1;step<=12;step++){
@@ -1129,7 +1137,7 @@ sealed class StudioWindow : Form {
                     await System.Threading.Tasks.Task.Delay(350,constructionCancel.Token);
                 }
                 buildProgress.Text="Four wall drags sent. Inspect Sims 4 to confirm the walls were placed correctly.";
-            }catch(OperationCanceledException){buildProgress.Text="STOPPED: wall placement canceled.";}
+            }catch(OperationCanceledException){buildProgress.Text="STOPPED: "+(constructionCancel.IsCancellationRequested?"Emergency Stop activated.":cancelReason);}
              catch(Exception ex){buildProgress.Text="Wall placement halted: "+ex.Message;}
             finally{building=false;armed=false;buildTest.Enabled=true;checkingMode=false;}
         };
