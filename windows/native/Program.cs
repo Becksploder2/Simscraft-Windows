@@ -1208,9 +1208,9 @@ sealed class StudioWindow : Form {
                 buildProgress.Text="Cannot verify Sims 4 window bounds. Construction stopped.";return;
             }
             var safeGameArea=System.Drawing.Rectangle.FromLTRB(
-                gameRect.Left+90,gameRect.Top+90,gameRect.Right-90,gameRect.Bottom-130);
+                gameRect.Left+140,gameRect.Top+140,gameRect.Right-140,gameRect.Bottom-190);
             if(allPoints.Any(pt=>!safeGameArea.Contains(pt))){
-                buildProgress.Text="House footprint is too close to Sims 4 window edges or UI. This can pan the camera. Zoom out, center the lot, and recalibrate before building.";
+                buildProgress.Text="Camera locked: planned walls would enter an edge-scroll or UI zone. No input sent. Keep your camera fixed; adjust the blueprint footprint or recalibrate.";
                 return;
             }
             if(allPoints.Any(pt=>!screens.Any(rect=>rect.Contains(pt)))){
@@ -1236,11 +1236,14 @@ sealed class StudioWindow : Form {
                 }
                 if(!focused)throw new InvalidOperationException("Sims 4 did not become foreground.");
                 for(int i=0;i<segments.Length;i++){
+                    // Camera remains user-controlled. Never send pan, zoom or rotate commands.
+                    // Verify the mouse path remains within the central safe area.
                     constructionCancel.Token.ThrowIfCancellationRequested();
                     if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException("ESC pressed.");
                     if(!SimsForeground())throw new InvalidOperationException("Sims 4 lost focus; stopped before the next wall.");
                     var w=segments[i];
                     var from=Tile(w.X1,w.Y1);var to=Tile(w.X2,w.Y2);
+                    if(!safeGameArea.Contains(from)||!safeGameArea.Contains(to))throw new InvalidOperationException("Camera lock: wall path approaches screen edge. No further placement attempted.");
                     SetCursorPos(from.X,from.Y);
                     await System.Threading.Tasks.Task.Delay(160,constructionCancel.Token);
                     if(!SimsForeground())throw new InvalidOperationException("Sims 4 lost focus before dragging.");
