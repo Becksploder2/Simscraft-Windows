@@ -1105,7 +1105,7 @@ sealed class StudioWindow : Form {
                 constructionCancel.Token.ThrowIfCancellationRequested();
                 if((GetAsyncKeyState(0x1B)&0x8000)!=0){cancelReason="ESC pressed.";throw new OperationCanceledException();}
                 if(SimsForeground()){focusMisses=0;return;}
-                if(++focusMisses>=4){cancelReason="Sims 4 lost foreground focus during wall placement.";throw new OperationCanceledException();}
+                if(++focusMisses>=10){cancelReason="Sims 4 lost foreground focus during wall placement.";throw new OperationCanceledException();}
             }
             buildProgress.Text="Waiting for Sims 4 to become foreground (12 seconds). ESC cancels.";
             try {
@@ -1117,6 +1117,7 @@ sealed class StudioWindow : Form {
                     await System.Threading.Tasks.Task.Delay(200,constructionCancel.Token);
                 }
                 if(!ready)throw new InvalidOperationException("Sims 4 was not activated in time.");
+                cancelReason="Wall placement interrupted; inspect focus and ESC state.";
                 for(int side=0;side<4;side++){
                     constructionCancel.Token.ThrowIfCancellationRequested();
                     CheckWallSafety();
@@ -1127,7 +1128,7 @@ sealed class StudioWindow : Form {
                     mouse_event(0x0002,0,0,0,UIntPtr.Zero); // left down
                     try {
                         for(int step=1;step<=12;step++){
-                            if((GetAsyncKeyState(0x1B)&0x8000)!=0||!SimsForeground())throw new OperationCanceledException();
+                            CheckWallSafety();
                             constructionCancel.Token.ThrowIfCancellationRequested();
                             SetCursorPos(from.X+(to.X-from.X)*step/12,from.Y+(to.Y-from.Y)*step/12);
                             await System.Threading.Tasks.Task.Delay(30,constructionCancel.Token);
