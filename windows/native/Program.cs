@@ -1145,6 +1145,89 @@ sealed class StudioWindow : Form {
             finally{building=false;armed=false;buildTest.Enabled=true;checkingMode=false;}
         };
         p.Controls.Add(wallToolReady);p.Controls.Add(buildTest);p.Controls.Add(buildProgress);
+        // Assisted automatic construction: generates and executes a small house shell
+        // with two interior partitions. The grid must be calibrated on the intended lot.
+        var autoHouse=new Button { Text="AUTO BUILD HOUSE — single-story starter",AutoSize=true };
+        autoHouse.Click+=async (_,_)=>{
+            if(building){buildProgress.Text="Another construction is running.";return;}
+            if(!SimsRunning()||!gridReady||!cameraTopDown.Checked||!wallToolReady.Checked){
+                buildProgress.Text="Auto Build needs Sims 4, a calibrated lot, top-down camera and selected straight Wall Tool.";
+                return;
+            }
+            if(!allowControl.Checked){buildProgress.Text="Approve game control before Auto Build.";return;}
+            if(string.IsNullOrWhiteSpace(prompt.Text)){buildProgress.Text="Describe the house first.";return;}
+            // A conservative starter house: 8x8 exterior with two interior divisions.
+            // Coordinates are relative to the first tile clicked during calibration.
+            System.Drawing.Point Tile(int x,int y)=>new(
+                gridOrigin.X+x*gridWidthStep.X+y*gridDepthStep.X,
+                gridOrigin.Y+x*gridWidthStep.Y+y*gridDepthStep.Y);
+            var segments=new (int X1,int Y1,int X2,int Y2,string Name)[]{
+                (0,0,8,0,"North exterior"),(8,0,8,8,"East exterior"),
+                (8,8,0,8,"South exterior"),(0,8,0,0,"West exterior"),
+                (0,4,8,4,"Interior horizontal"),(4,0,4,4,"Interior vertical")
+            };
+            var allPoints=segments.SelectMany(w=>new[]{Tile(w.X1,w.Y1),Tile(w.X2,w.Y2)}).ToArray();
+            var screens=Screen.AllScreens.Select(x=>x.Bounds).ToArray();
+            if(allPoints.Any(pt=>!screens.Any(rect=>rect.Contains(pt)))){
+                buildProgress.Text="Planned house extends outside the display. Reposition the camera and recalibrate.";
+                return;
+            }
+            if(MessageBox.Show(this,
+                "AUTO BUILD STARTER HOUSE: 8x8 tiles, 4 exterior walls and 2 interior partitions. "+
+                "This will modify your Sims 4 lot and spend in-game funds. The app cannot verify lot boundaries. "+
+                "Confirm ALL projected corners are on the intended empty lot and save your game first. "+
+                "Keep Sims 4 foreground and the straight Wall Tool selected. Continue?",
+                "Approve automatic house construction",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            building=true;checkingMode=true;autoHouse.Enabled=false;buildTest.Enabled=false;
+            buildProgress.Text="Auto Build: switch to Sims 4 within 12 seconds. ESC stops.";
+            bool mouseHeld=false;
+            try{
+                bool focused=false;
+                for(int attempt=0;attempt<60;attempt++){
+                    constructionCancel.Token.ThrowIfCancellationRequested();
+                    if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException("ESC pressed.");
+                    if(SimsForeground()){focused=true;break;}
+                    await System.Threading.Tasks.Task.Delay(200,constructionCancel.Token);
+                }
+                if(!focused)throw new InvalidOperationException("Sims 4 did not become foreground.");
+                for(int i=0;i<segments.Length;i++){
+                    constructionCancel.Token.ThrowIfCancellationRequested();
+                    if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException("ESC pressed.");
+                    if(!SimsForeground())throw new InvalidOperationException("Sims 4 lost focus; stopped before the next wall.");
+                    var w=segments[i];
+                    var from=Tile(w.X1,w.Y1);var to=Tile(w.X2,w.Y2);
+                    SetCursorPos(from.X,from.Y);
+                    await System.Threading.Tasks.Task.Delay(160,constructionCancel.Token);
+                    if(!SimsForeground())throw new InvalidOperationException("Sims 4 lost focus before dragging.");
+                    mouse_event(0x0002,0,0,0,UIntPtr.Zero);
+                    mouseHeld=true;
+                    try{
+                        for(int step=1;step<=20;step++){
+                            constructionCancel.Token.ThrowIfCancellationRequested();
+                            if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException("ESC pressed.");
+                            if(!SimsForeground())throw new InvalidOperationException("Sims 4 lost focus while dragging.");
+                            SetCursorPos(from.X+(to.X-from.X)*step/20,from.Y+(to.Y-from.Y)*step/20);
+                            await System.Threading.Tasks.Task.Delay(35,constructionCancel.Token);
+                        }
+                    }finally{
+                        mouse_event(0x0004,0,0,0,UIntPtr.Zero);
+                        mouseHeld=false;
+                    }
+                    buildProgress.Text="Auto Build: "+(i+1)+"/"+segments.Length+" wall segments sent — "+w.Name;
+                    await System.Threading.Tasks.Task.Delay(450,constructionCancel.Token);
+                }
+                buildProgress.Text="Auto Build shell complete: 6 wall drags sent. Inspect the lot; doors, roof, floors and furniture are not built yet.";
+            }catch(OperationCanceledException ex){
+                buildProgress.Text="Auto Build stopped: "+(constructionCancel.IsCancellationRequested?"Emergency Stop.":ex.Message);
+            }catch(Exception ex){buildProgress.Text="Auto Build halted: "+ex.Message;}
+            finally{
+                if(mouseHeld)mouse_event(0x0004,0,0,0,UIntPtr.Zero);
+                building=false;checkingMode=false;armed=false;
+                autoHouse.Enabled=true;buildTest.Enabled=true;
+            }
+        };
+        p.Controls.Add(autoHouse);
+
 
         page.Disposed+=(_,_)=>gridTimer.Dispose();
         var output=new TextBox { Width=760,Height=230,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
