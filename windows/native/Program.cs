@@ -1147,7 +1147,7 @@ sealed class StudioWindow : Form {
         p.Controls.Add(wallToolReady);p.Controls.Add(buildTest);p.Controls.Add(buildProgress);
         // Assisted automatic construction: generates and executes a small house shell
         // with two interior partitions. The grid must be calibrated on the intended lot.
-        var autoHouse=new Button { Text="AUTO BUILD HOUSE — single-story starter",AutoSize=true };
+        var autoHouse=new Button { Text="AUTO BUILD HOUSE — from prompt (wall layout)",AutoSize=true };
         autoHouse.Click+=async (_,_)=>{
             if(building){buildProgress.Text="Another construction is running.";return;}
             if(!SimsRunning()||!gridReady||!cameraTopDown.Checked||!wallToolReady.Checked){
@@ -1156,24 +1156,69 @@ sealed class StudioWindow : Form {
             }
             if(!allowControl.Checked){buildProgress.Text="Approve game control before Auto Build.";return;}
             if(string.IsNullOrWhiteSpace(prompt.Text)){buildProgress.Text="Describe the house first.";return;}
-            // A conservative starter house: 8x8 exterior with two interior divisions.
-            // Coordinates are relative to the first tile clicked during calibration.
+            // Translate supported prompt requirements into a variable wall plan.
+            // Unsupported features must not silently become a generic 8x8 house.
+            var request=prompt.Text.ToLowerInvariant();
+            if(request.Contains("two-story")||request.Contains("two story")||request.Contains("2-story")||
+               request.Contains("upstairs")||request.Contains("second floor")||
+               request.Contains("roof")||request.Contains("furnish")||request.Contains("window")||
+               request.Contains("door")||request.Contains("stairs")||request.Contains("garage")){
+                buildProgress.Text="Prompt requests unsupported construction (upper floors, roof, furnishings, openings or garage). This version builds single-story wall layouts only; no construction started.";
+                return;
+            }
+            int CountRoom(string word){
+                var match=System.Text.RegularExpressions.Regex.Match(request,@"(\d+)\s*"+word);
+                if(match.Success&&int.TryParse(match.Groups[1].Value,out int n))return Math.Clamp(n,1,8);
+                if(request.Contains("three "+word))return 3;
+                if(request.Contains("two "+word))return 2;
+                if(request.Contains("four "+word))return 4;
+                return request.Contains(word)?1:0;
+            }
+            int beds=CountRoom("bedroom"),baths=CountRoom("bathroom");
+            bool kitchen=request.Contains("kitchen");
+            int rooms=Math.Max(2,beds+baths+(kitchen?1:0)+1);
+            int lotWidth=(int)width.Value,lotDepth=(int)depth.Value;
+            int houseWidth=Math.Clamp(6+Math.Max(0,rooms-2)*2,8,Math.Min(20,lotWidth-4));
+            int houseDepth=Math.Clamp(6+Math.Max(0,rooms-2),8,Math.Min(18,lotDepth-4));
+            var wallSegments=new List<(int X1,int Y1,int X2,int Y2,string Name)>{
+                (0,0,houseWidth,0,"North exterior"),
+                (houseWidth,0,houseWidth,houseDepth,"East exterior"),
+                (houseWidth,houseDepth,0,houseDepth,"South exterior"),
+                (0,houseDepth,0,0,"West exterior")
+            };
+            // Divide the footprint into room bays based on requested room count.
+            int bayCount=Math.Min(rooms,Math.Max(2,houseWidth/3));
+            for(int bay=1;bay<bayCount;bay++){
+                int x=houseWidth*bay/bayCount;
+                wallSegments.Add((x,0,x,houseDepth/2,"Room divider "+bay));
+            }
+            wallSegments.Add((0,houseDepth/2,houseWidth,houseDepth/2,"Living-area divider"));
+            var segments=wallSegments.ToArray();
             System.Drawing.Point Tile(int x,int y)=>new(
                 gridOrigin.X+x*gridWidthStep.X+y*gridDepthStep.X,
                 gridOrigin.Y+x*gridWidthStep.Y+y*gridDepthStep.Y);
-            var segments=new (int X1,int Y1,int X2,int Y2,string Name)[]{
-                (0,0,8,0,"North exterior"),(8,0,8,8,"East exterior"),
-                (8,8,0,8,"South exterior"),(0,8,0,0,"West exterior"),
-                (0,4,8,4,"Interior horizontal"),(4,0,4,4,"Interior vertical")
-            };
             var allPoints=segments.SelectMany(w=>new[]{Tile(w.X1,w.Y1),Tile(w.X2,w.Y2)}).ToArray();
             var screens=Screen.AllScreens.Select(x=>x.Bounds).ToArray();
+            // Edge scrolling can move the Sims camera and invalidate every calibrated point.
+            // Keep every planned drag comfortably inside the game window, not merely on-screen.
+            using var simsWindow=Process.GetProcesses().FirstOrDefault(p=>
+                (p.ProcessName.Contains("TS4",StringComparison.OrdinalIgnoreCase)||
+                 p.ProcessName.Contains("Sims4",StringComparison.OrdinalIgnoreCase))&&p.MainWindowHandle!=IntPtr.Zero);
+            if(simsWindow==null||!GetWindowRect(simsWindow.MainWindowHandle,out var gameRect)){
+                buildProgress.Text="Cannot verify Sims 4 window bounds. Construction stopped.";return;
+            }
+            var safeGameArea=System.Drawing.Rectangle.FromLTRB(
+                gameRect.Left+90,gameRect.Top+90,gameRect.Right-90,gameRect.Bottom-130);
+            if(allPoints.Any(pt=>!safeGameArea.Contains(pt))){
+                buildProgress.Text="House footprint is too close to Sims 4 window edges or UI. This can pan the camera. Zoom out, center the lot, and recalibrate before building.";
+                return;
+            }
             if(allPoints.Any(pt=>!screens.Any(rect=>rect.Contains(pt)))){
                 buildProgress.Text="Planned house extends outside the display. Reposition the camera and recalibrate.";
                 return;
             }
             if(MessageBox.Show(this,
-                "AUTO BUILD STARTER HOUSE: 8x8 tiles, 4 exterior walls and 2 interior partitions. "+
+                "AUTO BUILD WALL PLAN: "+houseWidth+"x"+houseDepth+" tiles, "+segments.Length+" wall segments. Prompt: "+prompt.Text+Environment.NewLine+
                 "This will modify your Sims 4 lot and spend in-game funds. The app cannot verify lot boundaries. "+
                 "Confirm ALL projected corners are on the intended empty lot and save your game first. "+
                 "Keep Sims 4 foreground and the straight Wall Tool selected. Continue?",
@@ -1216,7 +1261,7 @@ sealed class StudioWindow : Form {
                     buildProgress.Text="Auto Build: "+(i+1)+"/"+segments.Length+" wall segments sent — "+w.Name;
                     await System.Threading.Tasks.Task.Delay(450,constructionCancel.Token);
                 }
-                buildProgress.Text="Auto Build shell complete: 6 wall drags sent. Inspect the lot; doors, roof, floors and furniture are not built yet.";
+                buildProgress.Text="Auto Build wall plan sent: "+segments.Length+" drags. Inspect the lot; doors, roof, floors and furniture are not built yet.";
             }catch(OperationCanceledException ex){
                 buildProgress.Text="Auto Build stopped: "+(constructionCancel.IsCancellationRequested?"Emergency Stop.":ex.Message);
             }catch(Exception ex){buildProgress.Text="Auto Build halted: "+ex.Message;}
