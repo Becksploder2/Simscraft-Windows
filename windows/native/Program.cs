@@ -946,6 +946,44 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(previewDraft);
         p.Controls.Add(structuredPreview);
+        // Explicit screenshot-to-construction handoff. Importing an image never
+        // grants permission to control Sims 4. Approvals expire on any edit.
+        string? approvedDraftKey=null;
+        string CurrentDraftKey()=>prompt.Text+"|"+width.Value+"|"+depth.Value+"|"+
+            string.Join(",",referenceProject.References.Select(x=>x.Id));
+        var approveDraft=new Button { Text="Review and approve screenshot build draft",AutoSize=true };
+        var draftApprovalStatus=new Label { Text="Screenshot import does not authorize game control.",AutoSize=true,ForeColor=Color.White };
+        approveDraft.Click+=(_,_)=>{
+            try {
+                if(referenceProject.References.Count==0) {
+                    draftApprovalStatus.Text="Import a screenshot first. No game input authorized.";
+                    return;
+                }
+                var draft=Simcraft.Buildcraft.BuildPromptPlanner.Preview(
+                    prompt.Text,(int)width.Value,(int)depth.Value,referenceProject.References);
+                var summary="REFERENCE-ASSISTED BUILD DRAFT"+Environment.NewLine+
+                    "Imported references: "+draft.ReferenceIds.Count+Environment.NewLine+
+                    "Proposed footprint: "+draft.Width+" x "+draft.Depth+" tiles"+Environment.NewLine+
+                    "Only a rectangular starter footprint is inferred from the text; screenshot contents are NOT interpreted."+Environment.NewLine+
+                    "Actual construction uses the separate calibrated Auto Build wall tool and may spend Simoleons."+Environment.NewLine+
+                    "No camera movements are permitted. All existing Build Mode, lot calibration, tool and safety checks still apply."+Environment.NewLine+
+                    "This approval does not begin construction."+Environment.NewLine+Environment.NewLine+
+                    "Approve this draft for a subsequent Auto Build attempt?";
+                if(MessageBox.Show(this,summary,"Review Buildcraft screenshot draft",
+                    MessageBoxButtons.YesNo,MessageBoxIcon.Warning)==DialogResult.Yes) {
+                    approvedDraftKey=CurrentDraftKey();
+                    draftApprovalStatus.Text="Draft approved. Confirm calibration, arm game control, then use Auto Build House.";
+                } else {
+                    approvedDraftKey=null;
+                    draftApprovalStatus.Text="Draft not approved; no construction authorized.";
+                }
+            } catch(Exception ex) {
+                approvedDraftKey=null;
+                draftApprovalStatus.Text="Cannot approve draft: "+ex.Message;
+            }
+        };
+        p.Controls.Add(approveDraft);
+        p.Controls.Add(draftApprovalStatus);
         var status=new Label { Text="Checking Sims 4 connection...",AutoSize=true,ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{
@@ -1274,6 +1312,10 @@ sealed class StudioWindow : Form {
         // with two interior partitions. The grid must be calibrated on the intended lot.
         var autoHouse=new Button { Text="AUTO BUILD HOUSE — from prompt (wall layout)",AutoSize=true };
         autoHouse.Click+=async (_,_)=>{
+            if(referenceProject.References.Count>0 && approvedDraftKey!=CurrentDraftKey()) {
+                buildProgress.Text="Imported screenshot draft requires review and approval before construction.";
+                return;
+            }
             if(building){buildProgress.Text="Another construction is running.";return;}
             if(!SimsRunning()||!gridReady||!cameraTopDown.Checked||!wallToolReady.Checked){
                 buildProgress.Text="Auto Build needs Sims 4, a calibrated lot, top-down camera and selected straight Wall Tool.";
