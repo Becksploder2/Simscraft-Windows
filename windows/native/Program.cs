@@ -875,6 +875,24 @@ sealed class StudioWindow : Form {
         Caption(p,"Lot depth (tiles)");
         var depth=new NumericUpDown { Minimum=10,Maximum=64,Value=20,Width=120 };
         p.Controls.Add(depth);
+        var structuredPreview=new TextBox { Width=760,Height=145,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
+        var previewDraft=new Button { Text="Preview structured footprint (no game input)",AutoSize=true };
+        previewDraft.Click+=(_,_)=>{
+            try {
+                var draft=Simcraft.Buildcraft.BuildPromptPlanner.Preview(prompt.Text,(int)width.Value,(int)depth.Value,referenceProject.References);
+                var lines=new List<string> {
+                    "STRUCTURED DRAFT — PREVIEW ONLY",
+                    "Footprint: "+draft.Width+" × "+draft.Depth+" tiles",
+                    "Commands: "+draft.Plan.Commands.Count+" (4 perimeter walls + floor)",
+                    "Reference images linked: "+draft.ReferenceIds.Count,
+                    "Camera: unchanged; no game commands sent."
+                };
+                lines.AddRange(draft.Warnings.Select(x=>"NOTE: "+x));
+                structuredPreview.Lines=lines.ToArray();
+            } catch(Exception ex) { structuredPreview.Text="Cannot generate draft: "+ex.Message; }
+        };
+        p.Controls.Add(previewDraft);
+        p.Controls.Add(structuredPreview);
         var status=new Label { Text="Checking Sims 4 connection...",AutoSize=true,ForeColor=Color.White };
         var detect=new Button { Text="Detect The Sims 4",AutoSize=true };
         detect.Click+=(_,_)=>{
