@@ -851,23 +851,43 @@ sealed class StudioWindow : Form {
         }
         var importReference=new Button { Text="Import Reference Images (PNG / JPG / WEBP)",AutoSize=true };
         bool referenceImportBusy=false;
+        void ResetImportButton(){referenceImportBusy=false;if(!importReference.IsDisposed)importReference.Enabled=true;}
         importReference.Click+=async (_,_)=>{
             if(referenceImportBusy)return;
+            referenceImportBusy=true;
+            importReference.Enabled=false;
+            referenceStatus.Text="Opening picture picker...";
             string[] selected;
             try {
-                using var dialog=new OpenFileDialog {
-                    Filter="Image files (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp",
-                    Multiselect=true,Title="Choose Buildcraft reference images",
-                    CheckFileExists=true,CheckPathExists=true,RestoreDirectory=true,
-                    AutoUpgradeEnabled=true
-                };
-                // Display the native picker on the UI thread. No file I/O happens
-                // until it closes, and no Sims 4 input is generated.
-                if(dialog.ShowDialog(this)!=DialogResult.OK)return;
-                selected=dialog.FileNames;
+                // Match Character Studio's known safer picker pattern: a dedicated STA
+                // thread and legacy dialog avoid blocking the main WinForms message loop.
+                // No owner is supplied across threads.
+                var selection=new System.Threading.Tasks.TaskCompletionSource<string[]?>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+                var pickerThread=new System.Threading.Thread(()=>{
+                    try {
+                        using var dialog=new OpenFileDialog {
+                            Filter="Image files|*.png;*.jpg;*.jpeg;*.webp",
+                            Multiselect=true,Title="Choose Buildcraft reference images",
+                            CheckFileExists=true,CheckPathExists=true,RestoreDirectory=true,
+                            AutoUpgradeEnabled=false,DereferenceLinks=true
+                        };
+                        selection.TrySetResult(dialog.ShowDialog()==DialogResult.OK?dialog.FileNames:null);
+                    } catch(Exception ex) { selection.TrySetException(ex); }
+                });
+                pickerThread.IsBackground=true;
+                pickerThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                pickerThread.Start();
+                var completed=await System.Threading.Tasks.Task.WhenAny(selection.Task,System.Threading.Tasks.Task.Delay(30000));
+                if(completed!=selection.Task) {
+                    referenceStatus.Text="Picture picker did not respond within 30 seconds. Check for a hidden dialog or shell extension issue.";
+                    ResetImportButton();return;
+                }
+                var files=await selection.Task;
+                if(files==null||files.Length==0){referenceStatus.Text="Import canceled.";ResetImportButton();return;}
+                selected=files;
             } catch(Exception ex) {
-                referenceStatus.Text="Could not open image picker: "+ex.Message;
-                return;
+                referenceStatus.Text="Could not open picture picker: "+ex.Message;
+                ResetImportButton();return;
             }
             referenceImportBusy=true;
             importReference.Enabled=false;
@@ -891,8 +911,7 @@ sealed class StudioWindow : Form {
             } catch(Exception ex) {
                 referenceStatus.Text="Reference import stopped: "+ex.Message;
             } finally {
-                referenceImportBusy=false;
-                if(!importReference.IsDisposed)importReference.Enabled=true;
+                ResetImportButton();
             }
         };
         prompt.Leave+=(_,_)=>{
