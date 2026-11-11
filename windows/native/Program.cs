@@ -1206,6 +1206,21 @@ sealed class StudioWindow : Form {
         };
         p.Controls.Add(cameraButton);p.Controls.Add(cameraTopDown);p.Controls.Add(cameraStatus);
         var wallToolReady=new CheckBox { Text="I selected the straight Wall Tool in Sims 4, and the calibrated area is empty",AutoSize=true,ForeColor=Color.White };
+        // Tool selection must be confirmed: no hard-coded clicks into an unknown
+        // Sims 4 UI layout. This guide never changes the camera or game controls.
+        var toolGuide=new Button { Text="Select required Build Mode tool (guided)",AutoSize=true };
+        var toolGuideStatus=new Label { Text="Tool not verified automatically.",AutoSize=true,ForeColor=Color.White };
+        toolGuide.Click+=(_,_)=>{
+            wallToolReady.Checked=false;
+            toolGuideStatus.Text="Open Sims 4 Build Mode and select the straight Wall Tool; confirm below.";
+            MessageBox.Show(this,
+                "For the current supported wall-building stage, choose the STRAIGHT WALL TOOL in Sims 4 Build Mode. "+
+                "Return to Buildcraft and confirm the checkbox only after visually checking the selected tool. "+
+                "Buildcraft cannot yet reliably identify or select tool icons across resolutions and UI layouts. "+
+                "Do not move the camera after grid calibration.",
+                "Buildcraft tool setup",MessageBoxButtons.OK,MessageBoxIcon.Information);
+        };
+        p.Controls.Add(toolGuide);p.Controls.Add(toolGuideStatus);
         var buildTest=new Button { Text="BUILD TEST: place 4x4 room walls",AutoSize=true };
         var buildProgress=new Label { Text="Ready for first wall-placement test. ESC aborts.",AutoSize=true,ForeColor=Color.White };
         bool building=false;
@@ -1325,6 +1340,13 @@ sealed class StudioWindow : Form {
             if(string.IsNullOrWhiteSpace(prompt.Text)){buildProgress.Text="Describe the house first.";return;}
             // Translate supported prompt requirements into a variable wall plan.
             // Unsupported features must not silently become a generic 8x8 house.
+            // An approved image-assisted draft currently has only a rectangular
+            // footprint. Never substitute the separate heuristic room layout for
+            // that draft; doing so would falsely claim to follow the screenshot.
+            if(referenceProject.References.Count>0) {
+                buildProgress.Text="Screenshot draft is preview-only. Image geometry and the execution plan are not linked yet; live construction stopped rather than building a different layout.";
+                return;
+            }
             var request=prompt.Text.ToLowerInvariant();
             if(request.Contains("two-story")||request.Contains("two story")||request.Contains("2-story")||
                request.Contains("upstairs")||request.Contains("second floor")||
