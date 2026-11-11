@@ -6,9 +6,15 @@ using System.Drawing;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using Simcraft.Photos;
 
-ApplicationConfiguration.Initialize();
-Application.Run(new StudioWindow());
+internal static class Program {
+    [STAThread]
+    static void Main() {
+        ApplicationConfiguration.Initialize();
+        Application.Run(new StudioWindow());
+    }
+}
 
 sealed class StudioWindow : Form {
     readonly TabControl tabs = new() { Dock = DockStyle.Fill };
@@ -80,58 +86,67 @@ sealed class StudioWindow : Form {
         void Fill() { template.Items.Clear(); for(int i=1;i<=19;i++) template.Items.Add((gender.SelectedIndex==0?"F":"M")+i); template.SelectedIndex=0; }
         gender.SelectedIndexChanged+=(_,_)=>Fill(); Fill();
         var choose=new Button { Text="Browse for Photo", AutoSize=true };
+        var photoPath=new TextBox { Width=650, PlaceholderText="Paste a full photo path, or drop an image below",
+            AccessibleName="Reference photo path" };
+        var loadPhoto=new Button { Text="Load Photo Path", AutoSize=true };
         var importStatus=new Label { Text="Ready to import a reference photo",AutoSize=true,ForeColor=Color.White };
-        choose.Click+=async (_,_)=>{
+        bool importing=false;
+        async System.Threading.Tasks.Task ImportPhotoAsync(string path) {
+            if(importing)return;
+            if(string.IsNullOrWhiteSpace(path)){importStatus.Text="Paste a full photo path first.";return;}
+            importing=true;
             choose.Enabled=false;
+            loadPhoto.Enabled=false;
+            using var cancellation=new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(15));
             try {
-                // Run the shell picker on its own STA thread so a stalled Windows shell extension cannot block the main UI.
-                var selection=new System.Threading.Tasks.TaskCompletionSource<string?>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
-                var pickerThread=new System.Threading.Thread(()=>{
-                    try {
-                        using var dialog=new OpenFileDialog {
-                            Filter="Images|*.png;*.jpg;*.jpeg;*.bmp",
-                            CheckFileExists=true, AutoUpgradeEnabled=false,
-                            RestoreDirectory=true, DereferenceLinks=true
-                        };
-                        selection.TrySetResult(dialog.ShowDialog()==DialogResult.OK?dialog.FileName:null);
-                    } catch(Exception ex){selection.TrySetException(ex);}
-                });
-                pickerThread.IsBackground=true;
-                pickerThread.SetApartmentState(System.Threading.ApartmentState.STA);
-                pickerThread.Start();
-                importStatus.Text="Opening photo picker...";
-                var completed=await System.Threading.Tasks.Task.WhenAny(selection.Task,System.Threading.Tasks.Task.Delay(30000));
-                if(completed!=selection.Task){importStatus.Text="Photo picker is not responding. Please try again.";return;}
-                var file=await selection.Task;
-                if(string.IsNullOrEmpty(file)){importStatus.Text="Import canceled.";return;}
+                string file=PhotoFiles.NormalizePath(path);
                 importStatus.Text="Loading photo...";
-                var decode=System.Threading.Tasks.Task.Run(()=>{
-                    var info=new FileInfo(file);
-                    if(info.Length>40_000_000)throw new InvalidDataException("Image exceeds 40 MB limit.");
-                    using var image=Image.FromFile(file);
-                    if(image.Width>8192||image.Height>8192||((long)image.Width*image.Height)>30_000_000)
-                        throw new InvalidDataException("Image dimensions too large. Resize the photo first.");
-                    var thumbnail=new Bitmap(800,600);
-                    using(var g=Graphics.FromImage(thumbnail)){
-                        g.Clear(Color.FromArgb(20,25,35));
-                        var scale=Math.Min(800.0/image.Width,600.0/image.Height);
-                        int w=(int)(image.Width*scale),h=(int)(image.Height*scale);
-                        g.DrawImage(image,(800-w)/2,(600-h)/2,w,h);
-                    }
-                    return thumbnail;
-                });
-                completed=await System.Threading.Tasks.Task.WhenAny(decode,System.Threading.Tasks.Task.Delay(15000));
-                if(completed!=decode){importStatus.Text="Photo decoding timed out; try a smaller image.";return;}
-                var loaded=await decode;
+                var decode=System.Threading.Tasks.Task.Run(()=>PhotoFiles.DecodePreview(file,cancellation.Token),cancellation.Token);
+                Bitmap loaded;
+                try { loaded=await decode.WaitAsync(cancellation.Token); }
+                catch {
+                    // A native decoder/file read may finish after the timeout; release its late result too.
+                    _=decode.ContinueWith(task=>{
+                        if(task.Status==System.Threading.Tasks.TaskStatus.RanToCompletion)task.Result.Dispose();
+                        else if(task.IsFaulted)_=task.Exception;
+                    },System.Threading.Tasks.TaskScheduler.Default);
+                    throw;
+                }
                 if(preview.IsDisposed){loaded.Dispose();return;}
                 var previous=preview.Image;
-                preview.Image=loaded;selectedPhoto=file;
+                preview.Image=loaded;selectedPhoto=file;photoPath.Text=file;
                 previous?.Dispose();
                 importStatus.Text="Photo imported successfully.";
-            } catch(Exception ex){importStatus.Text="Import failed: "+ex.Message;}
-            finally {if(!choose.IsDisposed)choose.Enabled=true;}
+            } catch(OperationCanceledException){if(!importStatus.IsDisposed)importStatus.Text="Photo loading timed out; try a local, smaller image.";}
+            catch(Exception ex){if(!importStatus.IsDisposed)importStatus.Text="Import failed: "+ex.Message;}
+            finally {
+                importing=false;
+                if(!choose.IsDisposed)choose.Enabled=true;
+                if(!loadPhoto.IsDisposed)loadPhoto.Enabled=true;
+            }
+        }
+        choose.Click+=async (_,_)=>{
+            using var dialog=new PhotoPickerDialog(selectedPhoto);
+            if(dialog.ShowDialog(this)==DialogResult.OK && dialog.SelectedPhoto is string file)
+                await ImportPhotoAsync(file);
         };
-        p.Controls.Add(choose);p.Controls.Add(importStatus);p.Controls.Add(preview);
+        loadPhoto.Click+=async (_,_)=>await ImportPhotoAsync(photoPath.Text);
+        photoPath.KeyDown+=async (_,e)=>{
+            if(e.KeyCode==Keys.Enter){e.SuppressKeyPress=true;await ImportPhotoAsync(photoPath.Text);}
+        };
+        foreach(Control dropTarget in new Control[]{preview,photoPath}) {
+            dropTarget.AllowDrop=true;
+            dropTarget.DragEnter+=(_,e)=>{
+                if(e.Data?.GetData(DataFormats.FileDrop) is string[] files && files.Length==1 && PhotoFiles.IsSupported(files[0]))
+                    e.Effect=DragDropEffects.Copy;
+            };
+            dropTarget.DragDrop+=async (_,e)=>{
+                if(e.Data?.GetData(DataFormats.FileDrop) is string[] files && files.Length==1)
+                    await ImportPhotoAsync(files[0]);
+            };
+        }
+        preview.Disposed+=(_,_)=>preview.Image?.Dispose();
+        p.Controls.Add(photoPath);p.Controls.Add(loadPhoto);p.Controls.Add(choose);p.Controls.Add(importStatus);p.Controls.Add(preview);
         Caption(p,"SIM MORPH STUDIO — ORIGINAL CONTROLS");
         var refreshPreview=new Button { Text="Refresh Preview",AutoSize=true };
         refreshPreview.Click+=(_,_)=>{preview.Invalidate();importStatus.Text="Preview refreshed.";};

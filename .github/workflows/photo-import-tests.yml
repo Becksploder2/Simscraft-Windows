@@ -1,0 +1,20 @@
+name: Photo import checks
+on:
+  pull_request:
+    paths:
+      - 'windows/native/**'
+      - 'windows/tests/**'
+      - '.github/workflows/photo-import-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  photo-import:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build windows/native/SimcraftNative.csproj -c Release
+      - run: dotnet run --project windows/tests/PhotoImport.Tests -c Release
