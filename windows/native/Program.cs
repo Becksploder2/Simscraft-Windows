@@ -850,16 +850,50 @@ sealed class StudioWindow : Form {
             }
         }
         var importReference=new Button { Text="Import Reference Images (PNG / JPG / WEBP)",AutoSize=true };
-        importReference.Click+=(_,_)=>{
-            using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.webp",Multiselect=true,Title="Choose Buildcraft reference images" };
-            if(dialog.ShowDialog(this)!=DialogResult.OK)return;
-            int imported=0;
-            foreach(var file in dialog.FileNames) {
-                try { Simcraft.Buildcraft.BuildReferenceStore.Import(referenceDirectory,file); imported++; }
-                catch(Exception ex) { referenceStatus.Text="Import failed for "+Path.GetFileName(file)+": "+ex.Message; }
+        bool referenceImportBusy=false;
+        importReference.Click+=async (_,_)=>{
+            if(referenceImportBusy)return;
+            string[] selected;
+            try {
+                using var dialog=new OpenFileDialog {
+                    Filter="Image files (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp",
+                    Multiselect=true,Title="Choose Buildcraft reference images",
+                    CheckFileExists=true,CheckPathExists=true,RestoreDirectory=true,
+                    AutoUpgradeEnabled=true
+                };
+                // Display the native picker on the UI thread. No file I/O happens
+                // until it closes, and no Sims 4 input is generated.
+                if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+                selected=dialog.FileNames;
+            } catch(Exception ex) {
+                referenceStatus.Text="Could not open image picker: "+ex.Message;
+                return;
             }
-            try { referenceProject=Simcraft.Buildcraft.BuildReferenceStore.Load(referenceDirectory); RefreshReferenceList(); if(imported==dialog.FileNames.Length)referenceStatus.Text=imported+" reference(s) imported. Image interpretation and automatic construction are not implemented."; }
-            catch(Exception ex) { referenceStatus.Text="Could not refresh references: "+ex.Message; }
+            referenceImportBusy=true;
+            importReference.Enabled=false;
+            referenceStatus.Text="Importing "+selected.Length+" image(s)...";
+            try {
+                // Hashing and disk copies must not block the WinForms UI thread.
+                var result=await System.Threading.Tasks.Task.Run(()=>{
+                    int imported=0;
+                    var errors=new List<string>();
+                    foreach(var file in selected) {
+                        try { Simcraft.Buildcraft.BuildReferenceStore.Import(referenceDirectory,file); imported++; }
+                        catch(Exception ex) { errors.Add(Path.GetFileName(file)+": "+ex.Message); }
+                    }
+                    return (imported,errors);
+                });
+                referenceProject=Simcraft.Buildcraft.BuildReferenceStore.Load(referenceDirectory);
+                RefreshReferenceList();
+                referenceStatus.Text=result.errors.Count==0
+                    ? result.imported+" reference(s) imported. No image understanding or game control yet."
+                    : result.imported+" imported; "+result.errors.Count+" failed: "+string.Join("; ",result.errors.Take(2));
+            } catch(Exception ex) {
+                referenceStatus.Text="Reference import stopped: "+ex.Message;
+            } finally {
+                referenceImportBusy=false;
+                if(!importReference.IsDisposed)importReference.Enabled=true;
+            }
         };
         prompt.Leave+=(_,_)=>{
             try { referenceProject.Prompt=prompt.Text; Simcraft.Buildcraft.BuildReferenceStore.Save(referenceDirectory,referenceProject); }
