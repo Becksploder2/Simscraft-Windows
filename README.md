@@ -32,6 +32,30 @@ To get a Windows build, open **Actions** in this repository and select the **Bui
 
 Extract the ZIP and launch `SimcraftStudio.exe`. The source-code ZIP downloaded from GitHub is **not** a ready-to-run Windows application.
 
+### Importing a reference photo
+
+In Character Studio, paste a full image path into **Reference photo path** and press
+**Load Photo Path** (or Enter), or drag one PNG/JPEG/BMP onto the photo preview/path field.
+**Browse for Photo** opens a lightweight file list instead of the Windows shell dialog:
+it reads only the current folder in the background, without thumbnails or subfolder scans.
+Double-click a folder to enter it, use **Up** to return, or paste an exact photo path in
+the picker's address box. Large folders are limited to the first 1,000 inspected entries;
+an exact photo path works regardless of that limit. **Cancel** remains available while loading.
+
+Photo decoding retains the 40 MB / 8192-pixel / 30-megapixel limits. Import failures keep
+the previously loaded photo. Analysis still starts after a successful import.
+
+Regression checks (Windows, .NET 8 SDK):
+
+```powershell
+dotnet build windows/native/SimcraftNative.csproj -c Release
+dotnet run --project windows/tests/PhotoImport.Tests -c Release
+```
+
+Manual check: import by path and by drag/drop, browse a folder containing nested images
+and non-image files, cancel while a folder loads, then import an image and confirm that
+**Analyze Faces** runs. Directory browsing must not decode images or enter subfolders.
+
 The workflow downloads the MediaPipe model during the build and currently retrieves face-template images from `Becksploder2/simcraft-studio-mac`. Consolidating these assets into this repository and providing unified Windows/macOS releases are planned; the Mac migration is not complete.
 
 ## Project layout
