@@ -815,6 +815,60 @@ sealed class StudioWindow : Form {
         Caption(p,"Describe the building or lot");
         var prompt=new TextBox { Width=760,Height=110,Multiline=true,ScrollBars=ScrollBars.Vertical };
         p.Controls.Add(prompt);
+        // Reference images are project-local and never initiate Sims 4 input.
+        var referenceDirectory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Simscraft","Buildcraft","DefaultProject");
+        var referenceStatus=new Label { Text="References are saved in the local Buildcraft project. No game actions are triggered.",AutoSize=true,ForeColor=Color.White };
+        var referenceList=new FlowLayoutPanel { Width=760,Height=172,AutoScroll=true,WrapContents=true,FlowDirection=FlowDirection.LeftToRight,BackColor=Color.FromArgb(30,38,54) };
+        Simcraft.Buildcraft.BuildReferenceProject referenceProject;
+        try { referenceProject=Simcraft.Buildcraft.BuildReferenceStore.Load(referenceDirectory); }
+        catch(Exception ex) { referenceProject=new Simcraft.Buildcraft.BuildReferenceProject(); referenceStatus.Text="Could not load saved references: "+ex.Message; }
+        if(string.IsNullOrWhiteSpace(prompt.Text)) prompt.Text=referenceProject.Prompt;
+        void RefreshReferenceList() {
+            referenceList.Controls.Clear();
+            foreach(var reference in referenceProject.References.ToArray()) {
+                var tile=new Panel { Width=174,Height=145,BackColor=Color.FromArgb(44,54,73) };
+                var picture=new PictureBox { Left=7,Top=5,Width=158,Height=94,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Color.FromArgb(24,31,48) };
+                var path=Path.Combine(referenceDirectory,"references",reference.FileName);
+                try {
+                    // System.Drawing does not decode WEBP on all Windows installations.
+                    // Do not display a guessed or misleading preview when unsupported.
+                    using var source=Image.FromFile(path);
+                    picture.Image=new Bitmap(source);
+                } catch { picture.Image=null; }
+                tile.Controls.Add(picture);
+                var name=new Label { Text=reference.OriginalName+" ("+reference.Width+"×"+reference.Height+")",Left=7,Top=101,Width=158,Height=19,AutoEllipsis=true,ForeColor=Color.White };
+                tile.Controls.Add(name);
+                var remove=new Button { Text="Remove",Left=7,Top=121,Width=75,Height=22 };
+                remove.Click+=(_,_)=>{
+                    referenceProject.References.RemoveAll(x=>x.Id==reference.Id);
+                    try { Simcraft.Buildcraft.BuildReferenceStore.Save(referenceDirectory,referenceProject); RefreshReferenceList(); }
+                    catch(Exception ex) { referenceStatus.Text="Could not save reference removal: "+ex.Message; }
+                };
+                tile.Controls.Add(remove);
+                referenceList.Controls.Add(tile);
+                tile.Disposed+=(_,_)=>picture.Image?.Dispose();
+            }
+        }
+        var importReference=new Button { Text="Import Reference Images (PNG / JPG / WEBP)",AutoSize=true };
+        importReference.Click+=(_,_)=>{
+            using var dialog=new OpenFileDialog { Filter="Images|*.png;*.jpg;*.jpeg;*.webp",Multiselect=true,Title="Choose Buildcraft reference images" };
+            if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+            int imported=0;
+            foreach(var file in dialog.FileNames) {
+                try { Simcraft.Buildcraft.BuildReferenceStore.Import(referenceDirectory,file); imported++; }
+                catch(Exception ex) { referenceStatus.Text="Import failed for "+Path.GetFileName(file)+": "+ex.Message; }
+            }
+            try { referenceProject=Simcraft.Buildcraft.BuildReferenceStore.Load(referenceDirectory); RefreshReferenceList(); if(imported==dialog.FileNames.Length)referenceStatus.Text=imported+" reference(s) imported. Image interpretation and automatic construction are not implemented."; }
+            catch(Exception ex) { referenceStatus.Text="Could not refresh references: "+ex.Message; }
+        };
+        prompt.Leave+=(_,_)=>{
+            try { referenceProject.Prompt=prompt.Text; Simcraft.Buildcraft.BuildReferenceStore.Save(referenceDirectory,referenceProject); }
+            catch(Exception ex) { referenceStatus.Text="Could not save prompt: "+ex.Message; }
+        };
+        p.Controls.Add(importReference);
+        p.Controls.Add(referenceStatus);
+        p.Controls.Add(referenceList);
+        RefreshReferenceList();
         Caption(p,"Lot width (tiles)");
         var width=new NumericUpDown { Minimum=10,Maximum=64,Value=30,Width=120 };
         p.Controls.Add(width);
