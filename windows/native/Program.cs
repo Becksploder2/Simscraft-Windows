@@ -1187,9 +1187,15 @@ sealed class StudioWindow : Form {
             double dot=(double)gridWidthStep.X*gridDepthStep.X+
                        (double)gridWidthStep.Y*gridDepthStep.Y;
             double cosine=wlen>0&&dlen>0?Math.Abs(dot)/(wlen*dlen):1;
-            gridReady=wlen>=8&&dlen>=8&&Math.Abs(cross)>wlen*dlen*.7&&cosine<.45;
+            // An isometric Sims 4 grid appears as a diamond: its two axes
+            // are not necessarily perpendicular in screen coordinates.
+            // Reject collinear and wildly unequal vectors, but do not
+            // require a screen-space right angle.
+            double separation=wlen>0&&dlen>0?Math.Abs(cross)/(wlen*dlen):0;
+            double ratio=Math.Min(wlen,dlen)/Math.Max(1,Math.Max(wlen,dlen));
+            gridReady=wlen>=8&&dlen>=8&&separation>=.42&&ratio>=.45;
             if(!gridReady){
-                gridStatus.Text="Calibration rejected: the two directions must follow adjacent grid tiles and form a near-right angle on screen. Reset and retry without moving the camera.";
+                gridStatus.Text="Calibration rejected: clicks must form two different adjacent grid directions. Measured lengths: "+wlen.ToString("F0")+"px / "+dlen.ToString("F0")+"px; separation: "+separation.ToString("P0")+". Reset and retry with the camera fixed.";
                 return;
             }
             gridStatus.Text="Screen grid calibrated, NOT lot-verified. Confirm the footprint lies on the intended lot. Keep camera, zoom and window position unchanged.";
