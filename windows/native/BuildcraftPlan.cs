@@ -10,23 +10,39 @@ namespace Simcraft.Buildcraft;
 /// </summary>
 public enum BuildAction { Wall, Floor, Door, Window, Roof, Furniture }
 public enum BuildStepStatus { Pending, AwaitingVerification, Verified, Failed, Skipped }
-public record BuildCommand(BuildAction Action, int X1, int Y1, int X2, int Y2, string Asset = "");
+public record BuildCommand(BuildAction Action, int X1, int Y1, int X2, int Y2, string Asset = "", int Story = 1);
 public sealed class BuildPlan {
     public List<BuildCommand> Commands { get; } = new();
+    public IReadOnlyList<BuildCommand> ForStory(int story) =>
+        Commands.Where(x => x.Story == story).ToList();
     public IReadOnlyList<BuildCommand> ForStage(BuildAction action) =>
         Commands.Where(x => x.Action == action).ToList();
-    public static BuildPlan Rectangle(int width, int depth) {
+    public static BuildPlan Rectangle(int width, int depth, int story = 1) {
+        if (story < 1 || story > 4)
+            throw new ArgumentOutOfRangeException(nameof(story), "Stories must be between 1 and 4.");
         if (width < 2 || depth < 2 || width > 100 || depth > 100)
             throw new ArgumentOutOfRangeException(nameof(width), "Room dimensions must be 2–100 tiles.");
         var plan = new BuildPlan();
         plan.Commands.AddRange(new[] {
-            new BuildCommand(BuildAction.Wall, 0, 0, width, 0),
-            new BuildCommand(BuildAction.Wall, width, 0, width, depth),
-            new BuildCommand(BuildAction.Wall, width, depth, 0, depth),
-            new BuildCommand(BuildAction.Wall, 0, depth, 0, 0),
-            new BuildCommand(BuildAction.Floor, 0, 0, width, depth)
+            new BuildCommand(BuildAction.Wall, 0, 0, width, 0, Story: story),
+            new BuildCommand(BuildAction.Wall, width, 0, width, depth, Story: story),
+            new BuildCommand(BuildAction.Wall, width, depth, 0, depth, Story: story),
+            new BuildCommand(BuildAction.Wall, 0, depth, 0, 0, Story: story),
+            new BuildCommand(BuildAction.Floor, 0, 0, width, depth, Story: story)
         });
         return plan;
+    }
+}
+public static class MultiStoryBuildPlans {
+    // Planning only: changing Sims 4 floors, stairs, heights and foundations
+    // requires a separate verified in-game controller.
+    public static BuildPlan RectangularStories(int width, int depth, int stories) {
+        if (stories < 1 || stories > 4)
+            throw new ArgumentOutOfRangeException(nameof(stories), "Supported preview range: 1–4 stories.");
+        var result = new BuildPlan();
+        for (int story = 1; story <= stories; story++)
+            result.Commands.AddRange(BuildPlan.Rectangle(width, depth, story).Commands);
+        return result;
     }
 }
 public sealed class BuildExecutionQueue {
