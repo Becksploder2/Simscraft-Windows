@@ -1456,10 +1456,32 @@ sealed class StudioWindow : Form {
                         mouse_event(0x0004,0,0,0,UIntPtr.Zero);
                         mouseHeld=false;
                     }
-                    buildProgress.Text="Auto Build: "+(i+1)+"/"+segments.Length+" wall segments sent — "+w.Name;
-                    await System.Threading.Tasks.Task.Delay(450,constructionCancel.Token);
+                    buildProgress.Text="Auto Build: "+(i+1)+"/"+segments.Length+" wall drag sent — "+w.Name+". Awaiting visual verification.";
+                    // The input API cannot tell us whether Sims 4 actually created
+                    // a wall or snapped its endpoint to the planned tile.
+                    // Never chain unverified drags into a random wall layout.
+                    if(i<segments.Length-1) {
+                        var check=MessageBox.Show(this,
+                            "Wall "+(i+1)+" of "+segments.Length+" ("+w.Name+") was attempted. "+
+                            "Inspect Sims 4: is it straight, on the intended grid line, "+
+                            "and connected at the expected corner?"+Environment.NewLine+
+                            "YES: continue with the next segment (switch back to Sims 4 within 12 seconds)."+Environment.NewLine+
+                            "NO: stop immediately and repair the calibration.",
+                            "Verify wall placement before continuing",
+                            MessageBoxButtons.YesNo,MessageBoxIcon.Warning);
+                        if(check!=DialogResult.Yes)
+                            throw new InvalidOperationException("Wall "+(i+1)+" was not verified. Construction stopped to prevent disconnected walls.");
+                        bool refocused=false;
+                        for(int wait=0;wait<60;wait++){
+                            constructionCancel.Token.ThrowIfCancellationRequested();
+                            if((GetAsyncKeyState(0x1B)&0x8000)!=0)throw new OperationCanceledException("ESC pressed.");
+                            if(SimsForeground()){refocused=true;break;}
+                            await System.Threading.Tasks.Task.Delay(200,constructionCancel.Token);
+                        }
+                        if(!refocused)throw new InvalidOperationException("Sims 4 did not regain focus after wall verification.");
+                    }
                 }
-                buildProgress.Text="Auto Build wall plan sent: "+segments.Length+" drags. Inspect the lot; doors, roof, floors and furniture are not built yet.";
+                buildProgress.Text="Auto Build wall plan attempted: "+segments.Length+" drags. Verify the final wall; doors, roof, floors and furniture are not built yet.";
             }catch(OperationCanceledException ex){
                 buildProgress.Text="Auto Build stopped: "+(constructionCancel.IsCancellationRequested?"Emergency Stop.":ex.Message);
             }catch(Exception ex){buildProgress.Text="Auto Build halted: "+ex.Message;}
