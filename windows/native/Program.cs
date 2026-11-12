@@ -69,6 +69,25 @@ sealed class StudioWindow : Form {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extraInfo);
+    // SendInput reports whether Windows accepted injected mouse button events.
+    // Moving the cursor alone is not proof that Sims 4 received a drag.
+    [StructLayout(LayoutKind.Sequential)] struct MouseInput {
+        public int Dx,Dy;
+        public uint MouseData,DwFlags,Time;
+        public UIntPtr ExtraInfo;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct NativeInput {
+        public uint Type;
+        public MouseInput Mouse;
+    }
+    [DllImport("user32.dll",SetLastError=true)] static extern uint SendInput(uint count,[In] NativeInput[] inputs,int size);
+    static void SendMouseButton(uint flags) {
+        var inputs=new[]{new NativeInput { Type=0,Mouse=new MouseInput { DwFlags=flags } }};
+        if(SendInput(1,inputs,Marshal.SizeOf<NativeInput>())!=1)
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),
+                "Windows did not accept Buildcraft's mouse button event. Check game/app elevation and input permissions.");
+    }
+
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out WinRect rect);
     [StructLayout(LayoutKind.Sequential)] struct WinRect { public int Left,Top,Right,Bottom; }
     static FlowLayoutPanel Panel(TabPage page) { var p = new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true, Padding=new Padding(22), BackColor=Color.FromArgb(36,45,64), BackgroundImage=page.BackgroundImage, BackgroundImageLayout=ImageLayout.Stretch }; page.Controls.Add(p); return p; }
@@ -1596,7 +1615,7 @@ sealed class StudioWindow : Form {
                     SetCursorPos(from.X,from.Y);
                     await System.Threading.Tasks.Task.Delay(160,constructionCancel.Token);
                     if(!SimsForeground())throw new InvalidOperationException("Sims 4 lost focus before dragging.");
-                    mouse_event(0x0002,0,0,0,UIntPtr.Zero);
+                    SendMouseButton(0x0002);
                     mouseHeld=true;
                     try{
                         for(int step=1;step<=20;step++){
@@ -1607,16 +1626,17 @@ sealed class StudioWindow : Form {
                             await System.Threading.Tasks.Task.Delay(35,constructionCancel.Token);
                         }
                     }finally{
-                        mouse_event(0x0004,0,0,0,UIntPtr.Zero);
+                        SendMouseButton(0x0004);
                         mouseHeld=false;
                     }
-                    buildProgress.Text="Auto Build: "+(i+1)+"/"+segments.Length+" wall drag sent — "+w.Name+". Awaiting visual verification.";
+                    buildProgress.Text="Auto Build: "+(i+1)+"/"+segments.Length+" mouse drag sent — "+w.Name+". Windows accepted input; Sims wall placement NOT verified.";
                     // The input API cannot tell us whether Sims 4 actually created
                     // a wall or snapped its endpoint to the planned tile.
                     // Never chain unverified drags into a random wall layout.
                     if(i<segments.Length-1) {
                         var check=MessageBox.Show(this,
                             "Wall "+(i+1)+" of "+segments.Length+" ("+w.Name+") was attempted. "+
+                            "If NO wall or preview appeared, choose NO to stop; do not approve an empty lot. "+
                             "Inspect Sims 4: is it straight, on the intended grid line, "+
                             "and connected at the expected corner?"+Environment.NewLine+
                             "YES: continue with the next segment (switch back to Sims 4 within 12 seconds)."+Environment.NewLine+
@@ -1640,7 +1660,7 @@ sealed class StudioWindow : Form {
                 buildProgress.Text="Auto Build stopped: "+(constructionCancel.IsCancellationRequested?"Emergency Stop.":ex.Message);
             }catch(Exception ex){buildProgress.Text="Auto Build halted: "+ex.Message;}
             finally{
-                if(mouseHeld)mouse_event(0x0004,0,0,0,UIntPtr.Zero);
+                if(mouseHeld)SendMouseButton(0x0004);
                 building=false;checkingMode=false;armed=false;
                 autoHouse.Enabled=true;buildTest.Enabled=true;
             }
