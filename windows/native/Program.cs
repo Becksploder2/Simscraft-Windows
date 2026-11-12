@@ -692,6 +692,74 @@ sealed class StudioWindow : Form {
         double score=Math.Clamp(bottom/.22,0,1);
         return (likely,score,"catalog "+bottom.ToString("P0")+", left "+left.ToString("P0")+", right "+right.ToString("P0")+", lot "+middle.ToString("P0"));
     }
+    // Conservative one-click detector for the near top-down green Sims 4 build grid.
+    // Returns a screen-local tile center and projected unit vectors. It never moves
+    // the camera or sends game input. Fail closed when the image is ambiguous.
+    static (bool Found,System.Drawing.Point Origin,System.Drawing.Point WidthStep,
+        System.Drawing.Point DepthStep,int TilesWide,int TilesDeep,double Confidence,string Reason)
+        DetectAutomaticLotGrid(Bitmap source) {
+        int w=source.Width,h=source.Height;
+        if(w<300||h<300)return (false,default,default,default,0,0,0,"Capture too small.");
+        // Locate a coherent green build surface, rather than assuming the whole
+        // game window is the lot. Sample sparsely to avoid costly GetPixel loops.
+        int stride=Math.Max(2,Math.Min(w,h)/350);
+        var row=new int[h],col=new int[w];
+        for(int y=0;y<h;y+=stride)for(int x=0;x<w;x+=stride) {
+            var c=source.GetPixel(x,y);
+            if(c.G>c.R*1.13&&c.G>c.B*1.12&&c.G>=25&&c.R<130) {
+                row[y]++;col[x]++;
+            }
+        }
+        int rowMax=row.Max(),colMax=col.Max();
+        if(rowMax<35||colMax<35)return (false,default,default,default,0,0,0,"No sufficiently large green lot surface detected.");
+        int top=Array.FindIndex(row,v=>v>rowMax*.50);
+        int bottom=Array.FindLastIndex(row,v=>v>rowMax*.50);
+        int left=Array.FindIndex(col,v=>v>colMax*.50);
+        int right=Array.FindLastIndex(col,v=>v>colMax*.50);
+        if(top<0||left<0||right-left<180||bottom-top<180)
+            return (false,default,default,default,0,0,0,"Visible lot is too small or obscured.");
+        // Grid-line peaks are measured inside the surface, away from the white
+        // lot outline. Prefer recurring brightness changes to raw green texture.
+        int x0=left+(right-left)/5,x1=right-(right-left)/5;
+        int y0=top+(bottom-top)/5,y1=bottom-(bottom-top)/5;
+        var xs=new double[x1-x0],ys=new double[y1-y0];
+        for(int y=y0+2;y<y1-2;y+=3)for(int x=x0+2;x<x1-2;x+=3) {
+            var c=source.GetPixel(x,y);
+            double lum=(c.R+c.G+c.B)/3.0;
+            var cx=source.GetPixel(x+2,y);
+            var cy=source.GetPixel(x,y+2);
+            xs[x-x0]+=Math.Abs(lum-(cx.R+cx.G+cx.B)/3.0);
+            ys[y-y0]+=Math.Abs(lum-(cy.R+cy.G+cy.B)/3.0);
+        }
+        static (int Lag,double Score) FindPeriod(double[] a) {
+            double best=0;int lagBest=0;
+            for(int lag=7;lag<=Math.Min(48,a.Length/5);lag++) {
+                double dot=0,aa=0,bb=0;
+                double avg=a.Average();
+                for(int i=0;i<a.Length-lag;i++) {
+                    double u=a[i]-avg,v=a[i+lag]-avg;
+                    dot+=u*v;aa+=u*u;bb+=v*v;
+                }
+                double score=dot/Math.Sqrt(Math.Max(1e-8,aa*bb));
+                if(score>best){best=score;lagBest=lag;}
+            }
+            return (lagBest,best);
+        }
+        var px=FindPeriod(xs);var py=FindPeriod(ys);
+        double confidence=Math.Min(px.Score,py.Score);
+        if(px.Lag<7||py.Lag<7||confidence<.68)
+            return (false,default,default,default,0,0,confidence,
+                "Grid spacing is ambiguous; use a clear, top-down, unobstructed Build Mode view.");
+        // Use the detected interior as a safe origin, not the lot's outer border.
+        // This reference is provisional until the lot outline is geometrically
+        // verified; do not enable live wall placement from it.
+        var origin=new System.Drawing.Point((left+right)/2,(top+bottom)/2);
+        int tilesWide=(right-left)/px.Lag,tilesDeep=(bottom-top)/py.Lag;
+        return (true,origin,new System.Drawing.Point(px.Lag,0),
+            new System.Drawing.Point(0,py.Lag),tilesWide,tilesDeep,confidence,
+            "Spacing detected. Boundary and tile-intersection alignment are not yet verified.");
+    }
+
     // Experimental periodicity estimate. It does not identify the lot origin.
     static (bool Found,int StepX,int StepY,double Confidence) EstimateLotGrid(Bitmap source) {
         const int n=192;
@@ -1124,24 +1192,26 @@ sealed class StudioWindow : Form {
         // One-click calibration assistant: measure the game view without sending
         // input. The image estimator currently returns spacing only, not an
         // independently verified origin or orientation. Do not mark gridReady.
-        var oneClickGrid=new Button { Text="AUTO CALIBRATE — analyze game grid",AutoSize=true };
+        var oneClickGrid=new Button { Text="AUTO CALIBRATE — detect visible lot",AutoSize=true };
         oneClickGrid.Click+=async (_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Open The Sims 4 in Build Mode first.";return;}
-            if(collectingGrid){gridStatus.Text="Finish or reset the existing calibration first.";return;}
-            oneClickGrid.Enabled=false;
-            gridReady=false;
+            collectingGrid=false;gridTimer.Stop();gridPoints.Clear();
+            oneClickGrid.Enabled=false;gridReady=false;
             try {
-                gridStatus.Text="Auto calibration: capturing visible Sims 4 grid (camera unchanged)...";
+                gridStatus.Text="Scanning the Sims 4 lot (camera remains stationary)...";
                 using var capture=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
-                var estimate=await System.Threading.Tasks.Task.Run(()=>EstimateLotGrid(capture));
-                gridPreview.Text="Auto-detected spacing: "+estimate.StepX+" × "+estimate.StepY+
-                    " screen pixels. Confidence: "+estimate.Confidence.ToString("P0")+
-                    Environment.NewLine+"Origin and orientation cannot yet be validated from this image."+
-                    Environment.NewLine+"For safe wall placement, complete the three adjacent-tile clicks.";
-                gridStatus.Text=estimate.Found
-                    ?"Grid spacing estimated; select Calibrate lot grid (3 clicks) to establish a verified origin."
-                    :"Grid pattern uncertain; no calibration applied. Try a clear empty lot in top-down Build Mode.";
-            }catch(Exception ex){gridStatus.Text="Automatic grid analysis failed: "+ex.Message;}
+                var result=await System.Threading.Tasks.Task.Run(()=>DetectAutomaticLotGrid(capture));
+                gridPreview.Text="Visible lot estimate: "+result.TilesWide+" × "+result.TilesDeep+
+                    " tiles; steps "+result.WidthStep.X+" × "+result.DepthStep.Y+
+                    " pixels; confidence "+result.Confidence.ToString("P0")+
+                    Environment.NewLine+result.Reason;
+                // Fail closed: identifying green pixels and periodic spacing is
+                // insufficient to verify the grid intersection and buildable
+                // boundaries. Never mark the wall runner ready on this basis.
+                gridStatus.Text=result.Found
+                    ?"Grid pattern detected automatically, but lot boundary/intersection verification is still required before safe construction."
+                    :"Automatic detection could not verify this view: "+result.Reason;
+            }catch(Exception ex){gridStatus.Text="Automatic calibration failed: "+ex.Message;}
             finally{oneClickGrid.Enabled=true;}
         };
         p.Controls.Add(oneClickGrid);
