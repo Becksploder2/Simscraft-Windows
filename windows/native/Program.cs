@@ -703,7 +703,7 @@ sealed class StudioWindow : Form {
         // Locate a coherent green build surface, rather than assuming the whole
         // game window is the lot. Sample sparsely to avoid costly GetPixel loops.
         int stride=Math.Max(2,Math.Min(w,h)/350);
-        var row=new int[h],col=new int[w];
+        int[] row=new int[h],col=new int[w];
         for(int y=0;y<h;y+=stride)for(int x=0;x<w;x+=stride) {
             var c=source.GetPixel(x,y);
             if(c.G>c.R*1.13&&c.G>c.B*1.12&&c.G>=25&&c.R<130) {
@@ -722,7 +722,7 @@ sealed class StudioWindow : Form {
         // lot outline. Prefer recurring brightness changes to raw green texture.
         int x0=left+(right-left)/5,x1=right-(right-left)/5;
         int y0=top+(bottom-top)/5,y1=bottom-(bottom-top)/5;
-        var xs=new double[x1-x0],ys=new double[y1-y0];
+        double[] xs=new double[x1-x0],ys=new double[y1-y0];
         for(int y=y0+2;y<y1-2;y+=3)for(int x=x0+2;x<x1-2;x+=3) {
             var c=source.GetPixel(x,y);
             double lum=(c.R+c.G+c.B)/3.0;
