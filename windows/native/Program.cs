@@ -1121,6 +1121,30 @@ sealed class StudioWindow : Form {
             }finally{autoGrid.Enabled=true;}
         };
         p.Controls.Add(autoGrid);
+        // One-click calibration assistant: measure the game view without sending
+        // input. The image estimator currently returns spacing only, not an
+        // independently verified origin or orientation. Do not mark gridReady.
+        var oneClickGrid=new Button { Text="AUTO CALIBRATE — analyze game grid",AutoSize=true };
+        oneClickGrid.Click+=async (_,_)=>{
+            if(!SimsRunning()){gridStatus.Text="Open The Sims 4 in Build Mode first.";return;}
+            if(collectingGrid){gridStatus.Text="Finish or reset the existing calibration first.";return;}
+            oneClickGrid.Enabled=false;
+            gridReady=false;
+            try {
+                gridStatus.Text="Auto calibration: capturing visible Sims 4 grid (camera unchanged)...";
+                using var capture=await System.Threading.Tasks.Task.Run(()=>CaptureSimsWindow());
+                var estimate=await System.Threading.Tasks.Task.Run(()=>EstimateLotGrid(capture));
+                gridPreview.Text="Auto-detected spacing: "+estimate.StepX+" × "+estimate.StepY+
+                    " screen pixels. Confidence: "+estimate.Confidence.ToString("P0")+
+                    Environment.NewLine+"Origin and orientation cannot yet be validated from this image."+
+                    Environment.NewLine+"For safe wall placement, complete the three adjacent-tile clicks.";
+                gridStatus.Text=estimate.Found
+                    ?"Grid spacing estimated; select Calibrate lot grid (3 clicks) to establish a verified origin."
+                    :"Grid pattern uncertain; no calibration applied. Try a clear empty lot in top-down Build Mode.";
+            }catch(Exception ex){gridStatus.Text="Automatic grid analysis failed: "+ex.Message;}
+            finally{oneClickGrid.Enabled=true;}
+        };
+        p.Controls.Add(oneClickGrid);
         startGrid.Click+=(_,_)=>{
             if(!SimsRunning()){gridStatus.Text="Launch The Sims 4 before calibrating.";return;}
             gridPoints.Clear();gridReady=false;collectingGrid=true;gridMouseWasDown=true;
