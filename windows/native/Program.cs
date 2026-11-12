@@ -1157,9 +1157,15 @@ sealed class StudioWindow : Form {
             double cross=(double)gridWidthStep.X*gridDepthStep.Y-(double)gridWidthStep.Y*gridDepthStep.X;
             double wlen=Math.Sqrt((double)gridWidthStep.X*gridWidthStep.X+(double)gridWidthStep.Y*gridWidthStep.Y);
             double dlen=Math.Sqrt((double)gridDepthStep.X*gridDepthStep.X+(double)gridDepthStep.Y*gridDepthStep.Y);
-            gridReady=wlen>=5&&dlen>=5&&Math.Abs(cross)>wlen*dlen*.15;
+            // The two selected adjacent-tile vectors must be close to orthogonal
+            // in screen space for the current supported top-down wall runner.
+            // The previous cross-product check admitted severely skewed clicks.
+            double dot=(double)gridWidthStep.X*gridDepthStep.X+
+                       (double)gridWidthStep.Y*gridDepthStep.Y;
+            double cosine=wlen>0&&dlen>0?Math.Abs(dot)/(wlen*dlen):1;
+            gridReady=wlen>=8&&dlen>=8&&Math.Abs(cross)>wlen*dlen*.7&&cosine<.45;
             if(!gridReady){
-                gridStatus.Text="Calibration rejected: choose three distinct adjacent tile centers forming two grid directions. Try again.";
+                gridStatus.Text="Calibration rejected: the two directions must follow adjacent grid tiles and form a near-right angle on screen. Reset and retry without moving the camera.";
                 return;
             }
             gridStatus.Text="Screen grid calibrated, NOT lot-verified. Confirm the footprint lies on the intended lot. Keep camera, zoom and window position unchanged.";
