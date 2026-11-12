@@ -10,9 +10,10 @@ namespace Simcraft.Buildcraft;
 /// </summary>
 public sealed record BuildPlanDraft(
     BuildPlan Plan, int Width, int Depth, IReadOnlyList<string> ReferenceIds,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings, int Stories = 1);
 
 public static class BuildPromptPlanner {
+    private static readonly Regex StoryCount = new(@"\b(?<count>[1-4])\s*(?:story|stories|storey|storeys|floors?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex Dimensions = new(
         @"\b(?<w>\d{1,3})\s*(?:x|×|by)\s*(?<d>\d{1,3})\s*(?:tiles?|squares?)?\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -29,6 +30,17 @@ public static class BuildPromptPlanner {
         if (prompt.Length > 10000)
             throw new ArgumentException("Prompt must be at most 10,000 characters.", nameof(prompt));
         var warnings = new List<string>();
+        int stories = 1;
+        var storyMatch = StoryCount.Match(prompt);
+        if (storyMatch.Success) stories = int.Parse(storyMatch.Groups["count"].Value);
+        else if (Regex.IsMatch(prompt, @"\b(two|second)\s*(story|storey|floor)\b|\bupstairs\b", RegexOptions.IgnoreCase))
+            stories = 2;
+        else if (Regex.IsMatch(prompt, @"\b(three|third)\s*(story|storey|floor)\b", RegexOptions.IgnoreCase))
+            stories = 3;
+        else if (Regex.IsMatch(prompt, @"\b(four|fourth)\s*(story|storey|floor)\b", RegexOptions.IgnoreCase))
+            stories = 4;
+        if (Regex.IsMatch(prompt, @"\bsplit[- ]level\b", RegexOptions.IgnoreCase))
+            warnings.Add("Split-level heights and stairs are not modeled yet; stories represent full floors only.");
         int width = Math.Min(lotWidth, 12);
         int depth = Math.Min(lotDepth, 10);
         var match = Dimensions.Match(prompt);
@@ -44,11 +56,12 @@ public static class BuildPromptPlanner {
         if (references is { Count: > 0 })
             warnings.Add("Reference images are attached for future interpretation; their contents are not analyzed.");
         warnings.Add("Preview only: rooms, doors, windows, roofs, furniture and actual lot boundaries are not inferred.");
+        if (stories > 1) warnings.Add("Multi-story preview only: floor switching, stairs, and elevated construction are not executable yet.");
         warnings.Add("No game input or camera movement is authorized by this plan.");
         var ids = new List<string>();
         if (references != null) foreach (var item in references)
             if (!string.IsNullOrWhiteSpace(item.Id) && !ids.Contains(item.Id))
                 ids.Add(item.Id);
-        return new BuildPlanDraft(BuildPlan.Rectangle(width, depth), width, depth, ids, warnings);
+        return new BuildPlanDraft(MultiStoryBuildPlans.RectangularStories(width, depth, stories), width, depth, ids, warnings, stories);
     }
 }
