@@ -996,6 +996,30 @@ sealed class StudioWindow : Form {
         Caption(p,"Lot depth (tiles)");
         var depth=new NumericUpDown { Minimum=10,Maximum=64,Value=20,Width=120 };
         p.Controls.Add(depth);
+        Caption(p,"LOT SIZE MANAGER — building footprint only (does not resize Sims 4 lots)");
+        var footprintWidth=new NumericUpDown { Minimum=4,Maximum=64,Value=12,Width=110 };
+        var footprintDepth=new NumericUpDown { Minimum=4,Maximum=64,Value=10,Width=110 };
+        var autoCenterFootprint=new CheckBox { Text="Automatically center the house within the entered lot",Checked=true,AutoSize=true,ForeColor=Color.White };
+        var footprintStatus=new Label { AutoSize=true,ForeColor=Color.White };
+        var footprintRow=new FlowLayoutPanel { Width=760,Height=38,FlowDirection=FlowDirection.LeftToRight };
+        footprintRow.Controls.Add(new Label { Text="House width (tiles)",AutoSize=true,ForeColor=Color.White,Padding=new Padding(0,7,0,0) });
+        footprintRow.Controls.Add(footprintWidth);
+        footprintRow.Controls.Add(new Label { Text="House depth (tiles)",AutoSize=true,ForeColor=Color.White,Padding=new Padding(12,7,0,0) });
+        footprintRow.Controls.Add(footprintDepth);
+        p.Controls.Add(footprintRow);p.Controls.Add(autoCenterFootprint);p.Controls.Add(footprintStatus);
+        void UpdateFootprintStatus(){
+            int lw=(int)width.Value,ld=(int)depth.Value,fw=(int)footprintWidth.Value,fd=(int)footprintDepth.Value;
+            bool fits=fw<=lw&&fd<=ld;
+            footprintStatus.Text=fits
+                ?"House "+fw+"x"+fd+" on entered lot "+lw+"x"+ld+"; margins "+(lw-fw)+"x"+(ld-fd)+" tiles total. Lot dimensions are user-entered, NOT automatically verified."
+                :"House exceeds entered lot dimensions. Reduce footprint before building.";
+            footprintStatus.ForeColor=fits?Color.White:Color.OrangeRed;
+        }
+        width.ValueChanged+=(_,_)=>UpdateFootprintStatus();
+        depth.ValueChanged+=(_,_)=>UpdateFootprintStatus();
+        footprintWidth.ValueChanged+=(_,_)=>UpdateFootprintStatus();
+        footprintDepth.ValueChanged+=(_,_)=>UpdateFootprintStatus();
+        UpdateFootprintStatus();
         var structuredPreview=new TextBox { Width=760,Height=145,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical };
         var previewDraft=new Button { Text="Preview structured footprint (no game input)",AutoSize=true };
         previewDraft.Click+=(_,_)=>{
@@ -1474,8 +1498,12 @@ sealed class StudioWindow : Form {
             bool kitchen=request.Contains("kitchen");
             int rooms=Math.Max(2,beds+baths+(kitchen?1:0)+1);
             int lotWidth=(int)width.Value,lotDepth=(int)depth.Value;
-            int houseWidth=Math.Clamp(6+Math.Max(0,rooms-2)*2,8,Math.Min(20,lotWidth-4));
-            int houseDepth=Math.Clamp(6+Math.Max(0,rooms-2),8,Math.Min(18,lotDepth-4));
+            int houseWidth=(int)footprintWidth.Value;
+            int houseDepth=(int)footprintDepth.Value;
+            if(houseWidth>lotWidth||houseDepth>lotDepth){
+                buildProgress.Text="BLOCKED: House footprint exceeds the entered lot dimensions. Adjust Lot Size Manager.";
+                return;
+            }
             var wallSegments=new List<(int X1,int Y1,int X2,int Y2,string Name)>{
                 (0,0,houseWidth,0,"North exterior"),
                 (houseWidth,0,houseWidth,houseDepth,"East exterior"),
@@ -1490,9 +1518,14 @@ sealed class StudioWindow : Form {
             }
             wallSegments.Add((0,houseDepth/2,houseWidth,houseDepth/2,"Living-area divider"));
             var segments=wallSegments.ToArray();
+            // The calibrated origin is an anchor, not necessarily the house's top-left corner.
+            // Centering uses tile offsets only; the Sims camera is never moved.
+            int lotOffsetX=autoCenterFootprint.Checked?(lotWidth-houseWidth)/2:0;
+            int lotOffsetY=autoCenterFootprint.Checked?(lotDepth-houseDepth)/2:0;
+            int placementX=lotOffsetX,placementY=lotOffsetY;
             System.Drawing.Point Tile(int x,int y)=>new(
-                gridOrigin.X+x*gridWidthStep.X+y*gridDepthStep.X,
-                gridOrigin.Y+x*gridWidthStep.Y+y*gridDepthStep.Y);
+                gridOrigin.X+(x+placementX)*gridWidthStep.X+(y+placementY)*gridDepthStep.X,
+                gridOrigin.Y+(x+placementX)*gridWidthStep.Y+(y+placementY)*gridDepthStep.Y);
             var allPoints=segments.SelectMany(w=>new[]{Tile(w.X1,w.Y1),Tile(w.X2,w.Y2)}).ToArray();
             var screens=Screen.AllScreens.Select(x=>x.Bounds).ToArray();
             // Edge scrolling can move the Sims camera and invalidate every calibrated point.
@@ -1505,17 +1538,37 @@ sealed class StudioWindow : Form {
             }
             var safeGameArea=System.Drawing.Rectangle.FromLTRB(
                 gameRect.Left+140,gameRect.Top+140,gameRect.Right-140,gameRect.Bottom-190);
+            if(safeGameArea.Width<=0||safeGameArea.Height<=0){
+                buildProgress.Text="BLOCKED: Sims 4 window is too small for safe wall input.";return;
+            }
             if(allPoints.Any(pt=>!safeGameArea.Contains(pt))){
-                buildProgress.Text="Camera locked: planned walls would enter an edge-scroll or UI zone. No input sent. Keep your camera fixed; adjust the blueprint footprint or recalibrate.";
-                return;
+                // Search only placements that fit the entered lot. Never move the camera.
+                // Prefer positions nearest the requested centered location.
+                var candidates=new List<(int X,int Y,int Distance)>();
+                for(int oy=0;oy<=lotDepth-houseDepth;oy++)
+                    for(int ox=0;ox<=lotWidth-houseWidth;ox++)
+                        candidates.Add((ox,oy,Math.Abs(ox-lotOffsetX)+Math.Abs(oy-lotOffsetY)));
+                bool found=false;
+                foreach(var candidate in candidates.OrderBy(c=>c.Distance)){
+                    placementX=candidate.X;placementY=candidate.Y;
+                    var projected=segments.SelectMany(w=>new[]{Tile(w.X1,w.Y1),Tile(w.X2,w.Y2)});
+                    if(projected.All(pt=>safeGameArea.Contains(pt)&&screens.Any(rect=>rect.Contains(pt)))){
+                        found=true;break;
+                    }
+                }
+                if(!found){
+                    buildProgress.Text="Camera locked: no placement of "+houseWidth+"x"+houseDepth+" tiles fits the protected screen area with this calibration. Reduce the house footprint or recalibrate; camera unchanged.";
+                    return;
+                }
+                allPoints=segments.SelectMany(w=>new[]{Tile(w.X1,w.Y1),Tile(w.X2,w.Y2)}).ToArray();
             }
             if(allPoints.Any(pt=>!screens.Any(rect=>rect.Contains(pt)))){
                 buildProgress.Text="Planned house extends outside the display. Reposition the camera and recalibrate.";
                 return;
             }
             if(MessageBox.Show(this,
-                "AUTO BUILD WALL PLAN: "+houseWidth+"x"+houseDepth+" tiles, "+segments.Length+" wall segments. Prompt: "+prompt.Text+Environment.NewLine+
-                "This will modify your Sims 4 lot and spend in-game funds. The app cannot verify lot boundaries. "+
+                "AUTO BUILD WALL PLAN: "+houseWidth+"x"+houseDepth+" tiles, "+segments.Length+" wall segments. Lot offset: ("+placementX+","+placementY+"). Prompt: "+prompt.Text+Environment.NewLine+
+                "This will modify your Sims 4 lot and spend in-game funds. Entered lot dimensions and calibrated origin are NOT independently verified. "+
                 "Confirm ALL projected corners are on the intended empty lot and save your game first. "+
                 "Keep Sims 4 foreground and the straight Wall Tool selected. Continue?",
                 "Approve automatic house construction",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
