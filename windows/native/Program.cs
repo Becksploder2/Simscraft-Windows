@@ -1368,12 +1368,13 @@ sealed class StudioWindow : Form {
                 return;
             }
             if(building){buildProgress.Text="Another construction is running.";return;}
-            if(!SimsRunning()||!gridReady||!cameraTopDown.Checked||!wallToolReady.Checked){
-                buildProgress.Text="Auto Build needs Sims 4, a calibrated lot, top-down camera and selected straight Wall Tool.";
-                return;
-            }
-            if(!allowControl.Checked){buildProgress.Text="Approve game control before Auto Build.";return;}
-            if(string.IsNullOrWhiteSpace(prompt.Text)){buildProgress.Text="Describe the house first.";return;}
+            // Report the actual failing preflight, not a generic "nothing happened".
+            if(!SimsRunning()){buildProgress.Text="BLOCKED: The Sims 4 process was not detected.";return;}
+            if(!gridReady){buildProgress.Text="BLOCKED: Grid calibration is not active. Recalibrate after any camera change.";return;}
+            if(!cameraTopDown.Checked){buildProgress.Text="BLOCKED: Confirm the Sims 4 camera is already top-down.";return;}
+            if(!wallToolReady.Checked){buildProgress.Text="BLOCKED: Confirm the straight Wall Tool is selected in Sims 4.";return;}
+            if(!allowControl.Checked){buildProgress.Text="BLOCKED: Enable the game-control permission checkbox before Auto Build.";return;}
+            if(string.IsNullOrWhiteSpace(prompt.Text)){buildProgress.Text="BLOCKED: Enter a house description first.";return;}
             // Translate supported prompt requirements into a variable wall plan.
             // Unsupported features must not silently become a generic 8x8 house.
             // An approved image-assisted draft currently has only a rectangular
