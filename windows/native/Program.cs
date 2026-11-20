@@ -19,7 +19,7 @@ sealed class StudioWindow : Form {
     private Image? roomBackground;
     private string? selectedPhoto;
     public StudioWindow() {
-        Text = "Simcraft Studio"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
+        Text = "Simcraft Studio — Buildcraft"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
@@ -33,7 +33,9 @@ sealed class StudioWindow : Form {
                 g.DrawImage(file,new Rectangle(0,0,1250,800));
             }
         } catch(Exception) { roomBackground?.Dispose(); roomBackground=null; }
-        foreach(var title in new[]{"Character Studio","Hair & Glasses","Clothing SmartAssist","CC Library","Face Texture Studio","Glasses Creator","CAS Mod Studio","AI Mod Studio","UV Face Alignment","Buildcraft","Settings"}) {
+        // Buildcraft-first release: hide unfinished studios without deleting their source.
+        // Restore individual tabs only after their workflows have been implemented and tested.
+        foreach(var title in new[]{"Buildcraft","Settings"}) {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
             if(roomBackground != null) { page.BackgroundImage=roomBackground; page.BackgroundImageLayout=ImageLayout.Stretch; }
             tabs.TabPages.Add(page);
