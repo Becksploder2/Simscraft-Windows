@@ -19,7 +19,7 @@ sealed class StudioWindow : Form {
     private Image? roomBackground;
     private string? selectedPhoto;
     public StudioWindow() {
-        Text = "Simcraft Studio — Buildcraft"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
+        Text = "Simscraft Studio — Sim Creator"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
@@ -33,9 +33,9 @@ sealed class StudioWindow : Form {
                 g.DrawImage(file,new Rectangle(0,0,1250,800));
             }
         } catch(Exception) { roomBackground?.Dispose(); roomBackground=null; }
-        // Buildcraft-first release: hide unfinished studios without deleting their source.
+        // Sim Creator-first release: hide unfinished studios without deleting their source.
         // Restore individual tabs only after their workflows have been implemented and tested.
-        foreach(var title in new[]{"Buildcraft","Settings"}) {
+        foreach(var title in new[]{"Character Studio","Settings"}) {
             var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
             if(roomBackground != null) { page.BackgroundImage=roomBackground; page.BackgroundImageLayout=ImageLayout.Stretch; }
             tabs.TabPages.Add(page);
@@ -1738,8 +1738,8 @@ sealed class StudioWindow : Form {
         Caption(p,"Safety: Live wall test requires explicit confirmation and selected Wall Tool. ESC or EMERGENCY STOP aborts. Save the lot first.");
     }
     void BuildSettingsTab(TabPage page) {
-        var p=Panel(page);Caption(p,"Simcraft Studio — native preview");
-        Caption(p,"Export and import of mod and outfit plans are available in their respective tabs.");
+        var p=Panel(page);Caption(p,"Simscraft Studio — Sim Creator preview");
+        Caption(p,"This release focuses on Character Studio. Other studios will return in later updates.");
         Caption(p,"Photo previews and manual F1–F19 / M1–M19 selection are available in Character Studio.");
         Caption(p,"The original HTML workspace is not used by this native interface.");
         Caption(p,"Installed version: v"+CurrentVersion+" | Windows EXE file version: "+(System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()??"unknown"));
