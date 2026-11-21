@@ -164,6 +164,7 @@ sealed class StudioWindow : Form {
                 var previous=preview.Image;
                 preview.Image=loaded;selectedPhoto=file;
                 previous?.Dispose();
+                resetMorphSessionForNewPhoto?.Invoke();
                 importStatus.Text="Photo imported successfully.";
             } catch(Exception ex){importStatus.Text="Import failed: "+ex.Message;}
             finally {if(!choose.IsDisposed)choose.Enabled=true;}
@@ -233,6 +234,7 @@ sealed class StudioWindow : Form {
         morphFeature.Items.AddRange(new object[]{"eyes","eyebrows","nose","cheeks","mouth_lips","chin_jaw","forehead"});
         morphFeature.SelectedIndex=0;
         var completedFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // A new reference photo starts a new morph session, never inherits completed features.
         // Preview hit regions are approximate until landmark-driven hit testing is available.
         // Restrict hit testing to the displayed image (PictureBox Zoom letterboxing).
         string? PreviewFeature(Point location) {
@@ -276,6 +278,14 @@ sealed class StudioWindow : Form {
         var hoverSelection = new CheckBox { Text="One-Click CAS: select facial feature automatically on hover",Checked=true,AutoSize=true };
         var hoverStatus = new Label { Text="Hover selection uses nearby calibrated points; manual selection remains available.",AutoSize=true,ForeColor=Color.White };
         resetCompleted.Click+=(_,_)=>{completedFeatures.Clear();completedStatus.Text="Completed features: none";UpdateMorphProgress();hoverStatus.Text="All features available again.";};
+        resetMorphSessionForNewPhoto=()=>{
+            completedFeatures.Clear();
+            completedStatus.Text="Completed features: none";
+            UpdateMorphProgress();
+            morphFeature.SelectedIndex=0;
+            morphStatus.Text="New reference photo: morph progress reset. Start with a fresh Sim or manually reset the in-game face; Simcraft cannot undo prior in-game morphs automatically.";
+            hoverStatus.Text="New photo loaded; feature selection reset.";
+        };
         var hoverTimer = new System.Windows.Forms.Timer { Interval=75 };
         string lastHoverFeature="";
         string hoverCandidate="";
