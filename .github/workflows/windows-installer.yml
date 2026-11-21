@@ -49,11 +49,25 @@ jobs:
           name: Simcraft-Studio-Windows-Portable
           path: Simcraft-Studio-Windows-Portable.zip
           if-no-files-found: error
-      - name: Publish portable update release
+      - name: Read and validate application version
+        id: app_version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content windows/native/SimcraftNative.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Set a numeric Version (e.g. 1.0.13) in SimcraftNative.csproj before publishing" }
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Publish versioned portable update release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.app_version.outputs.tag }}
+          APP_VERSION: ${{ steps.app_version.outputs.version }}
         shell: bash
         run: |
-          if ! gh release view v1.0.12 >/dev/null 2>&1; then
-            gh release create v1.0.12 Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simscraft Studio 1.0.12 Windows Portable Update" --notes "Face calibration, automatic CAS screen capture for assisted morphing, and hover-based selection of calibrated facial features. Portable Windows ZIP. Morph automation remains experimental."
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; preserving its published assets."
+            exit 0
           fi
+          gh release create "$RELEASE_TAG" Simcraft-Studio-Windows-Portable.zip --target "$GITHUB_SHA" --title "Simscraft Studio $APP_VERSION Windows Portable" --notes "Portable Windows update. CAS morph automation remains experimental and requires in-game verification."
