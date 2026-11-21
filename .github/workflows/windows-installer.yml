@@ -44,6 +44,33 @@ jobs:
           Copy-Item template-source/Assets/FaceTemplates/Male portable/Templates/Male -Recurse -Force
           Copy-Item windows/native/publish/SimcraftNative.exe portable/SimcraftStudio.exe -Force
           Compress-Archive -Path portable/* -DestinationPath Simcraft-Studio-Windows-Portable.zip
+      - name: Validate portable distribution contents
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            'portable/SimcraftStudio.exe',
+            'portable/Models/face_landmarker.task',
+            'portable/FaceEngine/BundledAnalyzer/SimcraftFaceAnalyzer.exe',
+            'Simcraft-Studio-Windows-Portable.zip'
+          )
+          foreach ($file in $requiredFiles) {
+            if (!(Test-Path $file -PathType Leaf)) { throw "Required portable build file missing: $file" }
+            if ((Get-Item $file).Length -le 0) { throw "Required portable build file is empty: $file" }
+          }
+          foreach ($gender in @('Female', 'Male')) {
+            $folder = "portable/Templates/$gender"
+            if (!(Test-Path $folder -PathType Container)) { throw "Template folder missing: $folder" }
+            if (!(Get-ChildItem $folder -File -Recurse | Select-Object -First 1)) { throw "Template folder empty: $folder" }
+          }
+          Add-Type -AssemblyName System.IO.Compression
+          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path 'Simcraft-Studio-Windows-Portable.zip'))
+          try {
+            foreach ($entry in @('SimcraftStudio.exe', 'Models/face_landmarker.task', 'FaceEngine/BundledAnalyzer/SimcraftFaceAnalyzer.exe')) {
+              if (!$archive.GetEntry($entry)) { throw "Required file missing from ZIP: $entry" }
+            }
+          } finally {
+            $archive.Dispose()
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: Simcraft-Studio-Windows-Portable
