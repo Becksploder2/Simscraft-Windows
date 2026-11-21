@@ -19,7 +19,7 @@ sealed class StudioWindow : Form {
     private Image? roomBackground;
     private string? selectedPhoto;
     public StudioWindow() {
-        Text = "Simscraft Studio — Sim Creator"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
+        Text = "Simcraft Studio"; ClientSize = new Size(1250, 800); MinimumSize = new Size(950, 650); StartPosition=FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
@@ -33,25 +33,39 @@ sealed class StudioWindow : Form {
                 g.DrawImage(file,new Rectangle(0,0,1250,800));
             }
         } catch(Exception) { roomBackground?.Dispose(); roomBackground=null; }
-        // Sim Creator-first release: hide unfinished studios without deleting their source.
-        // Restore individual tabs only after their workflows have been implemented and tested.
-        foreach(var title in new[]{"Character Studio","Settings"}) {
-            var page = new TabPage(title) { BackColor = Color.FromArgb(27, 37, 57), ForeColor = Color.White, AutoScroll = true };
-            if(roomBackground != null) { page.BackgroundImage=roomBackground; page.BackgroundImageLayout=ImageLayout.Stretch; }
-            tabs.TabPages.Add(page);
-            if(title == "AI Mod Studio") BuildModTab(page);
-            else if(title == "Character Studio") BuildCharacterTab(page);
-            else if(title == "Hair & Glasses") BuildPreferencesTab(page);
-            else if(title == "Clothing SmartAssist") BuildClothingTab(page);
-            else if(title == "CC Library") BuildCatalogTab(page);
-            else if(title == "CAS Mod Studio") BuildPackageTab(page);
-            else if(title == "Buildcraft") BuildBuildcraftTab(page);
-            else if(title == "Settings") BuildSettingsTab(page);
-            else {
-                var info = new Label { Text = title + "\n\nNative migration in progress. The previous HTML tool has not yet been ported.", AutoSize = true, Location = new Point(30, 35), ForeColor = Color.White };
-                page.Controls.Add(info);
-            }
+        // Simcraft is the product, not a collection of separate unfinished studios.
+        // Keep the complete existing Sim Creator workflow in one main tab.
+        var simcraftPage = new TabPage("Simcraft") {
+            BackColor = Color.FromArgb(27, 37, 57),
+            ForeColor = Color.White,
+            AutoScroll = true
+        };
+        if(roomBackground != null) {
+            simcraftPage.BackgroundImage=roomBackground;
+            simcraftPage.BackgroundImageLayout=ImageLayout.Stretch;
         }
+        tabs.TabPages.Add(simcraftPage);
+        BuildCharacterTab(simcraftPage);
+
+        // Settings remain available from the menu without occupying a main tab.
+        var menu=new MenuStrip { Dock=DockStyle.Top };
+        var settingsMenu=new ToolStripMenuItem("Settings");
+        settingsMenu.Click+=(_,_)=>{
+            using var settingsWindow=new Form {
+                Text="Simcraft Settings",Size=new Size(850,420),
+                StartPosition=FormStartPosition.CenterParent,
+                BackColor=Color.FromArgb(27,37,57),ForeColor=Color.White
+            };
+            var settingsPage=new TabPage("Settings") { BackColor=settingsWindow.BackColor,ForeColor=Color.White };
+            BuildSettingsTab(settingsPage);
+            var settingsTabs=new TabControl { Dock=DockStyle.Fill };
+            settingsTabs.TabPages.Add(settingsPage);
+            settingsWindow.Controls.Add(settingsTabs);
+            settingsWindow.ShowDialog(this);
+        };
+        menu.Items.Add(settingsMenu);
+        MainMenuStrip=menu;
+        Controls.Add(menu);
     }
 
     static bool SimsRunning() {
