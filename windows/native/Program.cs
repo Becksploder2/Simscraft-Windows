@@ -23,7 +23,8 @@ sealed class StudioWindow : Form {
         BackColor = Color.FromArgb(24, 31, 48); ForeColor = Color.White;
         tabs.Font = new Font("Segoe UI", 11);
         Controls.Add(tabs);
-        // Test builds never interrupt the user with update prompts on startup.
+        // Check official releases on startup; never silently replace a running executable.
+        Shown+=async (_,_)=>await CheckForUpdates(null);
         try {
             var path=Path.Combine(AppContext.BaseDirectory,"assets","CAS_Background.png");
             if(File.Exists(path)) {
@@ -1779,12 +1780,49 @@ sealed class StudioWindow : Form {
         try {
             using var request=new HttpRequestMessage(HttpMethod.Get,"https://api.github.com/repos/Becksploder2/Simscraft-Windows/releases/latest");
             request.Headers.UserAgent.ParseAdd("SimcraftStudio/"+CurrentVersion);
-            using var response=await UpdateClient.SendAsync(request);response.EnsureSuccessStatusCode();
+            using var response=await UpdateClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
             using var json=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var tag=json.RootElement.GetProperty("tag_name").GetString()??"";
-            if(!Version.TryParse(tag.TrimStart('v','V'),out var latest)||latest<=new Version(CurrentVersion)){if(status!=null)status.Text="Up to date (v"+CurrentVersion+").";return;}
+            var release=json.RootElement;
+            var tag=release.GetProperty("tag_name").GetString()??"";
+            if(!Version.TryParse(tag.TrimStart('v','V'),out var latest) || latest<=new Version(CurrentVersion)){
+                if(status!=null)status.Text="Up to date (v"+CurrentVersion+").";
+                return;
+            }
             if(status!=null)status.Text="Update available: "+tag;
-            // Manual check only: do not interrupt testing with a release prompt.
+            if(MessageBox.Show(this,"Simcraft Studio "+tag+" is available. Download the official Windows update to Downloads? Installation is manual.","Simcraft update",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes)return;
+            string? assetUrl=null,assetName=null;
+            if(release.TryGetProperty("assets",out var assets)) {
+                foreach(var asset in assets.EnumerateArray()){
+                    var candidate=asset.GetProperty("name").GetString()??"";
+                    if(candidate.EndsWith(".zip",StringComparison.OrdinalIgnoreCase) &&
+                       (candidate.Contains("windows",StringComparison.OrdinalIgnoreCase)||candidate.Contains("portable",StringComparison.OrdinalIgnoreCase))){
+                        assetUrl=asset.GetProperty("browser_download_url").GetString();
+                        assetName=candidate;break;
+                    }
+                }
+            }
+            if(assetUrl==null || assetName==null){
+                Process.Start(new ProcessStartInfo("https://github.com/Becksploder2/Simscraft-Windows/releases/latest"){UseShellExecute=true});
+                if(status!=null)status.Text="Update available; open release page to download.";
+                return;
+            }
+            if(status!=null)status.Text="Downloading update...";
+            using var download=await UpdateClient.GetAsync(assetUrl,HttpCompletionOption.ResponseHeadersRead);
+            download.EnsureSuccessStatusCode();
+            var directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"Downloads");
+            Directory.CreateDirectory(directory);
+            var destination=Path.Combine(directory,tag+"-"+Path.GetFileName(assetName));
+            var temporary=destination+".partial";
+            try {
+                await using(var input=await download.Content.ReadAsStreamAsync())
+                await using(var output=new FileStream(temporary,FileMode.Create,FileAccess.Write,FileShare.None)){
+                    await input.CopyToAsync(output);
+                }
+                File.Move(temporary,destination,true);
+            } finally {if(File.Exists(temporary))File.Delete(temporary);}
+            if(status!=null)status.Text="Update downloaded: "+Path.GetFileName(destination);
+            MessageBox.Show(this,"Update saved to:\\n"+destination+"\\n\\nClose Simcraft before installing the update.","Download complete",MessageBoxButtons.OK,MessageBoxIcon.Information);
         } catch(Exception ex){if(status!=null)status.Text="Update check failed: "+ex.Message;}
     }
     void BuildModTab(TabPage page) {
